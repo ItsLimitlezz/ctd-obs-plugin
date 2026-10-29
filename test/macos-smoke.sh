@@ -76,12 +76,22 @@ codesign -dv "${bundle}" > "${out}/plugin-codesign.txt" 2>&1 || true
 echo '::endgroup::'
 
 echo '::group::Test feed'
-(cd "${work}" && exec ./mediamtx "${here}/mediamtx.yml") > "${out}/mediamtx.log" 2>&1 &
+# the plugin always reads over SRT; the publisher uses RTSP if this FFmpeg has no SRT (the runner's doesn't)
+publish_url='srt://127.0.0.1:8890?streamid=publish:cam1&pkt_size=1316'
+publish_format=mpegts
+sed -e 's/^rtsp: false/rtsp: true/' "${here}/mediamtx.yml" > "${work}/mediamtx.yml"
+echo 'rtspTransports: [tcp]' >> "${work}/mediamtx.yml"
+if ! ffmpeg -hide_banner -protocols 2> /dev/null | grep -q -x ' *srt'; then
+  publish_url='rtsp://127.0.0.1:8554/cam1'
+  publish_format=rtsp
+  note "this FFmpeg ($(ffmpeg -version | head -n 1 | cut -d ' ' -f 3)) can't send SRT: the test feed is published over RTSP"
+fi
+(cd "${work}" && exec ./mediamtx mediamtx.yml) > "${out}/mediamtx.log" 2>&1 &
 mediamtx_pid=$!
 sleep 2
 publish() {
-  PUBLISH_URL='srt://127.0.0.1:8890?streamid=publish:cam1&pkt_size=1316' sh "${here}/publish.sh" \
-    > "${out}/publisher.log" 2>&1 &
+  PUBLISH_URL="${publish_url}" PUBLISH_FORMAT="${publish_format}" sh "${here}/publish.sh" \
+    >> "${out}/publisher.log" 2>&1 &
   publisher_pid=$!
 }
 publish
@@ -89,10 +99,12 @@ echo '::endgroup::'
 
 echo '::group::OBS settings: no first-run wizard or dialogs, one scene with a CTD Live source'
 mkdir -p "${config}/basic/scenes" "${config}/basic/profiles/CTD_Smoke"
+# FirstRun=true means "has run before" to OBS; LastVersion (32.2.2 as libobs packs it) skips What's New
 for ini in global.ini user.ini; do
   cat > "${config}/${ini}" << 'EOF'
 [General]
-FirstRun=false
+FirstRun=true
+LastVersion=537001986
 LicenseAccepted=true
 MacOSPermissionsDialogLastShown=99
 InfoIncrement=999

@@ -8,6 +8,7 @@
 #   PUBLISH_LTC   ltc-gen's options (e.g. "--fps 29.97 --drop"): LTC on the right channel, the beep on the left (T17)
 #   PUBLISH_AUDIO_KBPS  the AAC bitrate (default 128)
 #   PUBLISH_AUDIO_OFFSET  seconds the beep comes after the flash (T21 uses 0.2)
+#   PUBLISH_FORMAT  the output format (default mpegts; rtsp for an FFmpeg built without SRT)
 set -eu
 size="${PUBLISH_SIZE:-1280x720}"
 fps="${PUBLISH_FPS:-30}"
@@ -30,4 +31,4 @@ exec ffmpeg -hide_banner -loglevel warning -re \
   -itsoffset "${PUBLISH_AUDIO_OFFSET:-0}" -f lavfi -i "aevalsrc='if(lt(mod(t\,1)\,0.05)\,sin(2*PI*1000*t)\,0)':s=48000:c=stereo" \
   -c:v libx264 -preset veryfast -bf 2 -g "$((fps * 2))" -b:v 3M -pix_fmt yuv420p \
   -c:a aac -b:a "${kbps}k" ${PUBLISH_AUDIO_BSF:+-bsf:a "$PUBLISH_AUDIO_BSF"} \
-  -f mpegts "$url"
+  -f "${PUBLISH_FORMAT:-mpegts}" "$url"
