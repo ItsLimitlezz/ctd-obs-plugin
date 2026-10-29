@@ -1,0 +1,41 @@
+name: Test Harness
+on:
+  pull_request:
+    paths:
+      - src/engine/**
+      - tools/**
+      - test/**
+      - .github/workflows/harness.yaml
+  push:
+    branches: [main]
+    paths:
+      - src/engine/**
+      - tools/**
+      - test/**
+  workflow_dispatch:
+    inputs:
+      t6_minutes:
+        description: Minutes of T6 (the spec's full run is 15)
+        default: '15'
+permissions:
+  contents: read
+jobs:
+  scenarios:
+    name: Harness scenarios 🧪
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run T1, T2, T6 and T11 🧪
+        env:
+          T6_MINUTES: ${{ inputs.t6_minutes || '3' }}
+        run: bash test/scenarios.sh T1 T2 T11 T6
+
+      - name: Keep the probe output 📄
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-output
+          path: test/out/
+          if-no-files-found: ignore

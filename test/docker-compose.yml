@@ -1,0 +1,36 @@
+# The test harness (SPEC 10.4). Run the scenarios with test/scenarios.sh; it drives these services.
+name: ctd-harness
+
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "8890:8890/udp"
+      - "9997:9997"
+
+  # Restarts by itself when the server drops it (T11), so scenarios stop and start it to make outages (T6).
+  publisher:
+    build:
+      context: ..
+      dockerfile: test/Dockerfile
+    image: ctd-harness-tools
+    command: publish.sh
+    environment:
+      PUBLISH_URL: "srt://mediamtx:8890?streamid=publish:cam1&pkt_size=1316"
+      PUBLISH_SIZE: "${PUBLISH_SIZE:-1280x720}"
+      PUBLISH_AUDIO_BSF: "${PUBLISH_AUDIO_BSF:-}"
+      PUBLISH_LTC: "${PUBLISH_LTC:-}"
+      PUBLISH_AUDIO_KBPS: "${PUBLISH_AUDIO_KBPS:-128}"
+      PUBLISH_AUDIO_OFFSET: "${PUBLISH_AUDIO_OFFSET:-0}"
+    depends_on:
+      - mediamtx
+    restart: unless-stopped
+
+  # Run with: docker compose run --rm probe ctd-live-probe --host mediamtx --path cam1 ...
+  probe:
+    image: ctd-harness-tools
+    depends_on:
+      - mediamtx
+    profiles: ["probe"]

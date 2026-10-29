@@ -1,0 +1,41 @@
+# Exclude everything
+/*
+
+# Except for default project files
+!/.github
+!/build-aux
+!/cmake
+!/data
+!/src
+!.clang-format
+!.gersemirc
+!.gitignore
+!.gitattributes
+!buildspec.json
+!CMakeLists.txt
+!CMakePresets.json
+!LICENSE
+!README.md
+
+# Except for the icon masters (1024 px; data/icons has the small ones the plugin uses)
+!/assets
+
+# Except for the docs (the API reference)
+!/docs
+
+# Except for the probe CLI and the test harness
+!/tools
+!/test
+
+# Except for the project's own documents
+!REQUIREMENTS.md
+!SPEC.md
+
+# Exclude lock files
+*.lock.json
+
+# Exclude macOS legacy resource forks
+.DS_Store
+
+# Exclude CMake build number cache
+/cmake/.CMakeBuildNumber

@@ -1,0 +1,24 @@
+# Test server: SRT for the publishers and the probe, the API for the stream list; everything else off.
+logLevel: info
+logDestinations: [stdout]
+api: true
+apiAddress: :9997
+metrics: false
+pprof: false
+playback: false
+rtsp: false
+rtmp: false
+hls: false
+webrtc: false
+srt: true
+srtAddress: :8890
+authInternalUsers:
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: publish
+      - action: read
+      - action: api
+paths:
+  all_others:
