@@ -21,6 +21,9 @@ static enum http_status status_from_error(int err, const char *url)
 {
 	switch (err) {
 	case AVERROR_UNKNOWN: /* Schannel (Windows) refusing the handshake, for any reason: tcp and http never return it */
+#ifdef __APPLE__
+	case AVERROR(EIO): /* Secure Transport (macOS) refusing the handshake or the certificate */
+#endif
 		return url && av_strncasecmp(url, "https://", 8) == 0 ? HTTP_TLS_FAILED : HTTP_UNREACHABLE;
 	case AVERROR_HTTP_BAD_REQUEST:
 		return HTTP_BAD_REQUEST;
