@@ -15,6 +15,7 @@ API="http://localhost:9997/v3/paths/get/cam1"
 RECOVER_MS=3000 # "LIVE within 3 s" of the feed being back
 
 dc() { docker compose "$@"; }
+export BUILDKIT_PROGRESS=plain # a failed image build shows the compiler's errors, not just the step
 now_ms() { date +%s%3N; }
 
 # the server has the publisher's stream, as a reader would see it
