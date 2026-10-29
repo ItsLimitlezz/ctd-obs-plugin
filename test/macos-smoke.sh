@@ -90,7 +90,8 @@ fi
 mediamtx_pid=$!
 sleep 2
 publish() {
-  PUBLISH_URL="${publish_url}" PUBLISH_FORMAT="${publish_format}" sh "${here}/publish.sh" \
+  # small: the runner is 3 virtual cores with software OpenGL, and x264 shares them with OBS
+  PUBLISH_URL="${publish_url}" PUBLISH_FORMAT="${publish_format}" PUBLISH_SIZE=640x360 sh "${here}/publish.sh" \
     >> "${out}/publisher.log" 2>&1 &
   publisher_pid=$!
 }
@@ -215,6 +216,8 @@ if [[ -n "${crashes}" ]]; then
   cp ${crashes} "${out}/" 2> /dev/null || true
 fi
 grep -h '\[ctd-live' "${log}" > "${out}/ctd-lines.txt" || true
+snaps="$(grep -c 'exceeded cap' "${log}" || true)"
+[[ "${snaps}" -gt 0 ]] && note "${snaps} drift snaps (render times on this runner: $(grep -h -o 'render_video: .*' "${log}" | head -n 1))"
 
 kill "${publisher_pid}" "${mediamtx_pid}" 2> /dev/null || true
 cat "${out}/summary.md"

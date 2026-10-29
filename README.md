@@ -62,10 +62,14 @@ system FFmpeg, like OBS does. Download the package for your platform from the [r
 | | Package | How |
 | --- | --- | --- |
 | Windows | `ctd-live-source-<version>-windows-x64-installer.exe` | run it (close OBS first); or unpack the `.zip` into `C:\ProgramData\obs-studio\plugins\` |
-| macOS (Apple silicon and Intel) | `ctd-live-source-<version>-macos-universal.pkg` | run the installer |
+| macOS (Apple silicon and Intel) | `ctd-live-source-<version>-macos-universal.pkg` | run the installer (see below while it's unsigned) |
 | Ubuntu 24.04 | `ctd-live-source-<version>-x86_64-linux-gnu.deb` | `sudo apt install ./ctd-live-source-<version>-x86_64-linux-gnu.deb` |
 
 Restart OBS. `[ctd-live] plugin loaded (version <version>)` in the log means it loaded.
+
+The macOS package isn't signed by Apple yet, so macOS refuses to open it at first ("can't be opened because Apple
+cannot check it"). Open it anyway once: System Settings ▸ Privacy & Security ▸ **Open Anyway** (or Control-click the
+`.pkg` ▸ Open). It installs into your own `~/Library/Application Support/obs-studio/plugins`.
 
 ## Why it exists
 
