@@ -570,8 +570,9 @@ private:
 			QString color = str(user, "color");
 			if (color.isEmpty())
 				color = "#8ba3af";
-			if (obs_data_get_bool(data, "join")) {
-				/* API v1.3: "<name> joined" from Instagram/TikTok, dimmed so it doesn't drown the chat */
+			if (obs_data_get_bool(data, "join") || str(data, "kind") == "event") {
+				/* API v1.3: "<name> joined" from Instagram/TikTok, and v1.7's kind "event" lines ("<name>
+				 * followed"): dimmed so they don't drown the chat */
 				QString joined = str(data, "text");
 				if (joined.isEmpty())
 					joined = str(user, "name") + " joined";
