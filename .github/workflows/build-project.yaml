@@ -175,6 +175,31 @@ jobs:
           path: ${{ github.workspace }}/.ccache
           key: ${{ runner.os }}-ccache-${{ needs.check-event.outputs.config }}
 
+  macos-smoke:
+    name: Test in OBS for macOS 🍏
+    runs-on: macos-26
+    needs: [check-event, macos-build]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-macos-universal-${{ needs.check-event.outputs.commitHash }}'
+          path: ${{ runner.temp }}/plugin
+          merge-multiple: true
+
+      - name: Run OBS with the plugin 🧪
+        run: bash test/macos-smoke.sh "$(find "${{ runner.temp }}/plugin" -type f | head -n 1)"
+
+      - name: Keep the screenshots and logs 📄
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-smoke-${{ needs.check-event.outputs.commitHash }}
+          path: test/out/macos/
+          if-no-files-found: ignore
+
   ubuntu-build:
     name: Build for Ubuntu 🐧
     strategy:

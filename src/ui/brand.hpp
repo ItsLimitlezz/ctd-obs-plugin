@@ -87,7 +87,12 @@ enum class Face { Mono, Heading, Display };
 inline QString family(Face face)
 {
 	static bool loaded = false;
+	/* the system's own faces, if the bundled ones can't be loaded */
+#ifdef __APPLE__
+	static QString mono = "Menlo", heading = "Helvetica Neue", display = "Helvetica Neue";
+#else
 	static QString mono = "Consolas", heading = "Segoe UI", display = "Segoe UI";
+#endif
 	if (!loaded) {
 		loaded = true;
 		const char *files[] = {"fonts/SpaceMono-Regular.ttf",    "fonts/SpaceMono-Bold.ttf",
