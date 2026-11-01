@@ -4,9 +4,29 @@ The plugin can be driven and read three ways:
 
 | Way | For | How |
 |---|---|---|
-| **obs-websocket vendor `ctd`** | anything that already talks to OBS (CTD Live Studio, scripts, Stream Deck, an overlay) | `CallVendorRequest` with `vendorName: "ctd"`; events arrive as `VendorEvent` |
+| **obs-websocket vendor `ctd`** | anything that already talks to OBS (CTD Live Studio, scripts, Stream Deck, an overlay) | `CallVendorRequest` with `vendorName: "ctd"`; events arrive as `VendorEvent`. On the LAN, find OBS by [browsing for `_ctd-obs._tcp`](#finding-obs-on-the-network) |
 | **Webhook** | things that don't speak OBS WebSocket (a graphics server, a bot) | set a URL on a server profile (Tools ▸ CTD Live servers); events are POSTed as JSON |
 | **CTD Relay** | CTD Live mobile, CTD Overlay and the rest of the CTD family | pair in Docks ▸ CTD Relay; events go to Relay's `/apps/{appId}/events` |
+
+## Finding OBS on the network
+
+So CTD Live Studio (phone or PC) doesn't need an address typed in, the plugin announces each OBS on the LAN over
+mDNS / DNS-SD (Bonjour) while obs-websocket's server is on:
+
+| | |
+|---|---|
+| Service type | `_ctd-obs._tcp` in `local.` |
+| Instance name | the computer's name (Windows: its host name; macOS: its name in Sharing settings) |
+| Host and port | the computer's `.local` name and LAN address, and **obs-websocket's port** (4455 unless changed) |
+| TXT `v` | `1`, this format |
+| TXT `auth` | `1` if obs-websocket needs a password, `0` if not. The password itself is never announced: ask for it |
+| TXT `plugin`, `obs` | the plugin's and OBS's versions |
+
+Browse for `_ctd-obs._tcp`, resolve the instance, and connect to `ws://<host>:<port>` with obs-websocket 5 as above.
+The announcement follows changes to the port, the password setting and the LAN address within 5 s, and is withdrawn
+when OBS closes, when obs-websocket's server is turned off, or with Tools ▸ **Let CTD apps find this OBS** (on by
+default). Windows 10 1809 or later and macOS; not Linux yet. iOS apps must list `_ctd-obs._tcp` under
+`NSBonjourServices` in their Info.plist (and have `NSLocalNetworkUsageDescription`) to browse for it.
 
 Every request answers with JSON. A request that can fail has `"ok": true|false`, and an `"error"` (or `"message"`) when it
 did. `serverId` is a server profile id from `GetServers`; leave it out for the default profile.

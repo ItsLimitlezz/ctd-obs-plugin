@@ -116,6 +116,11 @@ SceneCollection=CTD Smoke
 SceneCollectionFile=CTD_Smoke
 EOF
 done
+# obs-websocket's server on, so the plugin announces this OBS for CTD Live Studio (network discovery)
+mkdir -p "${config}/plugin_config/obs-websocket"
+cat > "${config}/plugin_config/obs-websocket/config.json" << 'EOF'
+{ "first_load": false, "alerts_enabled": false, "server_enabled": true, "server_port": 4455, "auth_required": false }
+EOF
 cat > "${config}/basic/profiles/CTD_Smoke/basic.ini" << 'EOF'
 [General]
 Name=CTD Smoke
@@ -173,6 +178,30 @@ else
 fi
 sleep 8
 shot live
+
+# network discovery: what CTD Live Studio would see when it browses for OBS
+if wait_for '\[ctd-live\] network discovery: CTD apps on the network can find' 10; then
+  dns-sd -B _ctd-obs._tcp local > "${out}/dns-sd-browse.txt" 2>&1 &
+  browse_pid=$!
+  sleep 4
+  kill "${browse_pid}" 2> /dev/null || true
+  instance="$(awk '/ Add / { for (i = 7; i <= NF; i++) printf "%s%s", $i, (i < NF ? " " : "") ; exit }' "${out}/dns-sd-browse.txt")"
+  if [[ -n "${instance}" ]]; then
+    dns-sd -L "${instance}" _ctd-obs._tcp local > "${out}/dns-sd-lookup.txt" 2>&1 &
+    lookup_pid=$!
+    sleep 3
+    kill "${lookup_pid}" 2> /dev/null || true
+    if grep -q ':4455' "${out}/dns-sd-lookup.txt" && grep -q 'v=1' "${out}/dns-sd-lookup.txt"; then
+      pass "discoverable as \"${instance}\": $(grep -h -o 'can be reached at.*' "${out}/dns-sd-lookup.txt" | head -n 1) $(grep -h -o 'v=1.*' "${out}/dns-sd-lookup.txt" | head -n 1)"
+    else
+      fail "found \"${instance}\" but its port or TXT record is wrong (see dns-sd-lookup.txt)"
+    fi
+  else
+    fail "the plugin says it announced this OBS, but dns-sd -B doesn't see _ctd-obs._tcp"
+  fi
+else
+  fail "no network discovery announcement: $(grep -h -o 'network discovery: .*' "$(log_file)" | head -n 1)"
+fi
 grep -q 'decoding the video on the CPU' "$(log_file)" \
   && note "VideoToolbox fell back to the CPU: $(grep -h -o '\] .*decoding the video on the CPU' "$(log_file)" | head -n 1)"
 

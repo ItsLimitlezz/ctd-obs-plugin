@@ -17,13 +17,15 @@ OBS_MODULE_USE_DEFAULT_LOCALE("obs-ctd-live-source", "en-US")
 #include "obs/issues.h"
 #include "obs/sync-groups.h"
 #include "obs/webhook.h"
+#include "obs/discovery.h"
 
 extern struct obs_source_info ctd_live_source_info;
 extern struct obs_source_info ctd_live_audio_source_info;
 
-/* src/ui/multistream-dock.cpp, src/ui/hub-dock.cpp */
+/* src/ui/multistream-dock.cpp, src/ui/hub-dock.cpp, src/ui/discovery-menu.cpp */
 void ctd_multistream_dock_register(void);
 void ctd_hub_dock_register(void);
+void ctd_discovery_menu_register(void);
 
 MODULE_EXPORT const char *obs_module_description(void)
 {
@@ -40,6 +42,7 @@ bool obs_module_load(void)
 	ctd_multistream_dock_register();
 	ctd_servers_dialog_register();
 	ctd_hub_dock_register();
+	ctd_discovery_menu_register();
 	blog(LOG_INFO, "[ctd-live] plugin loaded (version %s)", PLUGIN_VERSION);
 	return true;
 }
@@ -51,10 +54,12 @@ void obs_module_post_load(void)
 	issues_start();      /* D1: after the vendor, so its first issues reach obs-websocket */
 	sync_groups_start(); /* S9 */
 	webhook_start();     /* I4 */
+	discovery_start();   /* reads obs-websocket's settings */
 }
 
 void obs_module_unload(void)
 {
+	discovery_stop();
 	sync_groups_stop();
 	issues_stop();
 	obs_watch_stop();
