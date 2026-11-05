@@ -78,6 +78,53 @@ QString maskKey(const QString &key)
 	return key.size() <= 6 ? QString("••••••") : key.left(6) + "••••••";
 }
 
+/* a host only reachable on its own network: loopback, RFC 1918, link-local, CGNAT, *.local, bare names */
+bool isLanHost(const QString &host)
+{
+	const QString h = host.trimmed().toLower();
+	if (h.isEmpty() || h == "localhost" || h.endsWith(".local") || h.endsWith(".lan") || h.endsWith(".home.arpa"))
+		return true;
+	const QStringList parts = h.split('.');
+	if (parts.size() == 4) {
+		int o[4];
+		for (int i = 0; i < 4; i++) {
+			bool ok = false;
+			o[i] = parts[i].toInt(&ok);
+			if (!ok || o[i] < 0 || o[i] > 255)
+				return false; /* a DNS name with four labels */
+		}
+		if (o[0] == 10 || o[0] == 127)
+			return true;
+		if (o[0] == 172 && o[1] >= 16 && o[1] <= 31)
+			return true;
+		if ((o[0] == 192 && o[1] == 168) || (o[0] == 169 && o[1] == 254))
+			return true;
+		return o[0] == 100 && o[1] >= 64 && o[1] <= 127;
+	}
+	if (h.contains(':')) {
+		/* IPv6; QUrl::host() gives it without brackets */
+		const QString v6 = QString(h).remove('[').remove(']');
+		return v6 == "::1" || v6.startsWith("fe80:") || v6.startsWith("fc") || v6.startsWith("fd");
+	}
+	return !h.contains('.'); /* a bare machine name, e.g. "nas" */
+}
+
+/* CTD Relay can hand back its LAN address (LAN_HTTP_HOST) even when this OBS reaches it through a public address,
+ * and that LAN IP is unreachable from another network. When the ingest host is a LAN address and the Relay address
+ * typed in the dock isn't, keep the RTMP port and path but use the Relay's host. Returns the server unchanged
+ * otherwise. */
+QString reachableIngestServer(const QString &server, const QString &relayAddress)
+{
+	QUrl ingest(server);
+	const QUrl relay = QUrl::fromUserInput(relayAddress.trimmed());
+	if (!ingest.isValid() || ingest.host().isEmpty() || !relay.isValid() || relay.host().isEmpty())
+		return server;
+	if (!isLanHost(ingest.host()) || isLanHost(relay.host()) || ingest.host() == relay.host())
+		return server;
+	ingest.setHost(relay.host());
+	return ingest.toString();
+}
+
 /* The vertical canvas Aitum Stream Suite (or anything else) made with OBS's canvas API: the first canvas other than
  * the main one whose picture is taller than wide. A strong reference, or nullptr. */
 obs_canvas_t *findVerticalCanvas()
@@ -615,7 +662,8 @@ private:
 				"OBS is streaming. Stop the stream first, then send it to this profile.");
 			return;
 		}
-		const QString server = str(ingest, "serverUrl");
+		const QString offered = str(ingest, "serverUrl");
+		const QString server = reachableIngestServer(offered, server_->text());
 		QString landscapeKey, verticalKey, verticalUrl;
 		obs_data_array_t *feeds = obs_data_get_array(ingest, "feeds");
 		for (size_t i = 0; feeds && i < obs_data_array_count(feeds); i++) {
@@ -633,9 +681,15 @@ private:
 			QMessageBox::warning(this, "CTD Relay", "This profile has no landscape stream key.");
 			return;
 		}
+		if (server != offered && !offered.isEmpty() && verticalUrl.startsWith(offered))
+			verticalUrl = server + verticalUrl.mid(offered.size());
 
 		QString question = QString("Set OBS's main stream to this profile?\n\nServer: %1\nStream key: %2")
 					   .arg(server, maskKey(landscapeKey));
+		if (server != offered)
+			question += QString("\n(CTD Relay offered its LAN address %1, but this OBS reaches it through %2, "
+					    "so %2 is used.)")
+					    .arg(QUrl(offered).host(), QUrl(server).host());
 		if (!verticalKey.isEmpty())
 			question += QString("\n\nVertical (Aitum): %1, key %2\nAitum Stream Suite doesn't let other "
 					    "plugins set its outputs, so the vertical stream URL will be copied to the "
