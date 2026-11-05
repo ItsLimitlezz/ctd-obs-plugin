@@ -1,0 +1,5 @@
+{
+  "sourceType": "dshow_input",
+  "settings": { "video_device_id": "Cam Link 4K:\\\\?\\usb#vid_0fd9&pid_0066&mi_00#6&1a2b3c4d&0&0000#{65e8773d-8f56-11d0-a3b9-00a0c9223196}\\global" },
+  "expect": { "class": "video", "name": "Cam Link 4K", "vidPid": "0fd9:0066", "serial": "6&1a2b3c4d&0&0000" }
+}

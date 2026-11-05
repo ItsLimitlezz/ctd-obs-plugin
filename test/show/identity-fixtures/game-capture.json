@@ -1,0 +1,1 @@
+{ "sourceType": "game_capture", "settings": { "window": "Game:UnrealWindow:game.exe" }, "expect": { "class": "window", "id": "Game:UnrealWindow:game.exe" } }

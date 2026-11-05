@@ -1,0 +1,1 @@
+{ "sourceType": "monitor_capture", "settings": { "monitor": "1" }, "expect": { "class": "display", "id": "1" } }

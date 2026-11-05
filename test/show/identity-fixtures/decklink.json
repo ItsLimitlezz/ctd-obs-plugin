@@ -1,0 +1,5 @@
+{
+  "sourceType": "decklink-input",
+  "settings": { "device_hash": "a1b2c3d4", "device_name": "DeckLink Mini Recorder" },
+  "expect": { "class": "video", "id": "a1b2c3d4", "name": "DeckLink Mini Recorder", "vidPid": "" }
+}

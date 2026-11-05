@@ -1,0 +1,5 @@
+{
+  "sourceType": "dshow_input",
+  "settings": { "video_device_id": "OBS Virtual Camera:\\\\?\\root#media#0000#{65e8773d-8f56-11d0-a3b9-00a0c9223196}" },
+  "expect": { "class": "video", "name": "OBS Virtual Camera", "vidPid": "", "serial": "" }
+}
