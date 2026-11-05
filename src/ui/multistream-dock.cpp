@@ -640,6 +640,8 @@ private:
 		obs_data_t *settings = obs_data_create();
 		obs_data_set_string(settings, "server", server.toUtf8().constData());
 		obs_data_set_string(settings, "key", landscapeKey.toUtf8().constData());
+		/* CTD OBS shows this service as "CTD Relay" in Settings ▸ Stream; stock OBS ignores it */
+		obs_data_set_bool(settings, "ctd_relay", true);
 		obs_service_t *service = obs_service_create("rtmp_custom", "default_service", settings, nullptr);
 		obs_data_release(settings);
 		if (!service) {

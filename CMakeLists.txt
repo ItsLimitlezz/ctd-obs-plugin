@@ -1,5 +1,81 @@
 cmake_minimum_required(VERSION 3.28...3.30)
 
+# Built as a core module inside CTD OBS (plugins/ctd-live-source in the ctd-obs repo), using OBS's own targets and
+# dependencies. Everything below this block is the standalone plugin build.
+if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
+  find_package(Qt6 REQUIRED Core Widgets)
+  find_package(FFmpeg REQUIRED COMPONENTS avcodec avformat avutil swresample swscale)
+
+  add_library(ctd-engine STATIC)
+  target_sources(
+    ctd-engine
+    PRIVATE
+      src/engine/audio-norm.c
+      src/engine/delay-queue.c
+      src/engine/engine.c
+      src/engine/hw-decode.c
+      src/engine/ltc.c
+      src/engine/sync-group.c
+  )
+  target_include_directories(ctd-engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/engine")
+  target_link_libraries(ctd-engine PUBLIC FFmpeg::avcodec FFmpeg::avformat FFmpeg::avutil FFmpeg::swresample)
+  set_property(TARGET ctd-engine PROPERTY FOLDER plugins/ctd-live-source)
+
+  file(READ buildspec.json _ctd_buildspec)
+  string(JSON _ctd_version GET "${_ctd_buildspec}" version)
+  file(READ src/plugin-support.c.in _ctd_support)
+  string(REPLACE "@CMAKE_PROJECT_NAME@" "ctd-live-source" _ctd_support "${_ctd_support}")
+  string(REPLACE "@CMAKE_PROJECT_VERSION@" "${_ctd_version}" _ctd_support "${_ctd_support}")
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/plugin-support.c" "${_ctd_support}")
+
+  add_library(ctd-live-source MODULE)
+  add_library(OBS::ctd-live-source ALIAS ctd-live-source)
+  target_sources(
+    ctd-live-source
+    PRIVATE
+      "${CMAKE_CURRENT_BINARY_DIR}/plugin-support.c"
+      src/api/mediamtx-api.c
+      src/api/poller.c
+      src/http-client.c
+      src/multistream.c
+      src/obs/ctd-live-source.c
+      src/obs/issues.c
+      src/obs/loss-card.c
+      src/obs/loss-video.c
+      src/obs/obs-watch.c
+      src/obs/servers.c
+      src/obs/sync-groups.c
+      src/obs/webhook.c
+      src/obs/ws-vendor.c
+      src/obsws-config.c
+      src/plugin-main.c
+      src/ui/hub-dock.cpp
+      src/ui/multistream-dock.cpp
+      src/ui/servers-dialog.cpp
+  )
+  target_include_directories(ctd-live-source PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+  target_link_libraries(
+    ctd-live-source
+    PRIVATE
+      ctd-engine
+      FFmpeg::avcodec
+      FFmpeg::avformat
+      FFmpeg::avutil
+      FFmpeg::swresample
+      FFmpeg::swscale
+      OBS::frontend-api
+      OBS::libobs
+      Qt::Core
+      Qt::Widgets
+      $<$<PLATFORM_ID:Windows>:ws2_32>
+  )
+  set_target_properties_obs(
+    ctd-live-source
+    PROPERTIES FOLDER plugins/ctd-live-source PREFIX "" AUTOMOC ON AUTOUIC ON AUTORCC ON
+  )
+  return()
+endif()
+
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/common/bootstrap.cmake" NO_POLICY_SCOPE)
 
 project(${_name} VERSION ${_version})
