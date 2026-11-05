@@ -138,7 +138,7 @@ public:
 		/* connection (H18) */
 		auto *connection = new QHBoxLayout();
 		server_ = new QLineEdit(this);
-		server_->setPlaceholderText(MS_DEFAULT_SERVER);
+		server_->setPlaceholderText(MS_SERVER_EXAMPLE);
 		connect_ = ctd::button(new QPushButton("Connect", this)); /* also Disconnect: never the bright one */
 		connection->addWidget(server_, 1);
 		connection->addWidget(connect_);
@@ -288,7 +288,14 @@ private:
 		if (linked) {
 			ms_disconnect();
 		} else {
-			ms_set_server(server_->text().trimmed().toUtf8().constData());
+			const QString server = server_->text().trimmed();
+			if (server.isEmpty()) {
+				/* there is no default server: pairing without one would wait forever */
+				action_->setText("Type CTD Relay's address first, e.g. " MS_SERVER_EXAMPLE ".");
+				server_->setFocus();
+				return;
+			}
+			ms_set_server(server.toUtf8().constData());
 			ms_start_pairing();
 		}
 	}
@@ -301,7 +308,7 @@ private:
 				QString("CTD Relay (%1) gets OBS's WebSocket password and this PC's address, so CTD "
 					"Live mobile can switch scenes and start or stop the stream through it. "
 					"Anyone who can sign in to CTD Relay can then control this OBS.")
-					.arg(server.isEmpty() ? QString(MS_DEFAULT_SERVER) : server);
+					.arg(server.isEmpty() ? QString("this server") : server);
 			if (server.startsWith("https://", Qt::CaseInsensitive))
 				detail +=
 					"\n\nThe address is https://, so the password travels encrypted, to a server whose "
