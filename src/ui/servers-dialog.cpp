@@ -75,11 +75,11 @@ public:
 		auto *form = new QFormLayout();
 		name_ = new QLineEdit(this);
 		host_ = new QLineEdit(this);
-		host_->setPlaceholderText("192.168.1.50");
+		host_->setPlaceholderText("nas.local");
 		srtPort_ = new QSpinBox(this);
 		srtPort_->setRange(1, 65535);
 		apiUrl_ = new QLineEdit(this);
-		apiUrl_->setPlaceholderText("http://192.168.1.50:9997 (blank: no stream list)");
+		apiUrl_->setPlaceholderText("http://nas.local:9997 (blank: no stream list)");
 		apiUser_ = new QLineEdit(this);
 		apiPass_ = secret();
 		apiToken_ = secret();

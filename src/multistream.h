@@ -26,7 +26,8 @@
 extern "C" {
 #endif
 
-#define MS_DEFAULT_SERVER "192.168.1.50:30080"
+/* shown as a hint only: there is no default server, the user types CTD Relay's address */
+#define MS_SERVER_EXAMPLE "nas.local:30080"
 
 enum ms_link {
 	MS_DISCONNECTED, /* no token */
@@ -55,7 +56,7 @@ enum ms_events {
 
 struct ms_snapshot {
 	enum ms_link link;
-	char *message;              /* one line for the dock, e.g. "Connected" or "Can't reach 192.168.1.50:30080" */
+	char *message;              /* one line for the dock, e.g. "Connected" or "Can't reach nas.local:30080" */
 	char *server;               /* the address as the user typed it */
 	char *pairing_code;         /* while pairing */
 	char *approve_url;          /* while pairing */
@@ -102,7 +103,7 @@ void ms_shutdown(void);
 void ms_snapshot_get(struct ms_snapshot *out);
 void ms_snapshot_free(struct ms_snapshot *snapshot);
 
-/* "192.168.1.50:30080", "http://nas.local:30080" or a full ".../api/v1" URL. Changing it disconnects. */
+/* "nas.local:30080", "http://192.0.2.10:30080" or a full ".../api/v1" URL. Changing it disconnects. */
 void ms_set_server(const char *server);
 /* Asks CTD Relay for a pairing code (H18). */
 void ms_start_pairing(void);

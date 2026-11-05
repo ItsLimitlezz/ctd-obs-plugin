@@ -196,7 +196,7 @@ static obs_data_t *clone_data(obs_data_t *data)
 	return data ? obs_data_create_from_json(obs_data_get_json(data)) : obs_data_create();
 }
 
-/* "192.168.1.50:30080" → "http://192.168.1.50:30080/api/v1" */
+/* "nas.local:30080" → "http://nas.local:30080/api/v1" */
 static char *api_base(const char *server)
 {
 	struct dstr url = {0};
@@ -1757,9 +1757,7 @@ void ms_init(void)
 	pthread_mutex_init(&ms.mutex, NULL);
 	os_event_init(&ms.wake, OS_EVENT_TYPE_AUTO);
 	os_atomic_set_bool(&ms.alive, true);
-	load_settings();
-	if (!ms.server)
-		ms.server = bstrdup(MS_DEFAULT_SERVER);
+	load_settings(); /* no default server: nothing is contacted until the user types one */
 	ms.link = ms.token ? MS_CONNECTED : MS_DISCONNECTED;
 	set_string(&ms.message, ms.token ? "Connecting…" : "Not connected");
 	ms.refresh_requested = true;

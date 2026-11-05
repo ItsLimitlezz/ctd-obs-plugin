@@ -31,7 +31,7 @@ void obsws_config_read(struct obsws_config *out);
 void obsws_config_free(struct obsws_config *config);
 
 /* The address this machine uses to reach host (the local end of a route to it), e.g. "192.168.1.42"; false if none.
- * host may carry a scheme and a port ("http://192.168.1.50:30080"). Nothing is sent. */
+ * host may carry a scheme and a port ("http://nas.local:30080"). Nothing is sent. */
 bool obsws_local_address(const char *host, char *out, size_t size);
 
 #ifdef __cplusplus
