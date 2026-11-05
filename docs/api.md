@@ -41,8 +41,8 @@ The answer is in `d.responseData.responseData`. To receive the events, identify 
 **`GetServers`** — the server profiles. Secrets (passwords, tokens, the webhook URL) are never included.
 
 ```json
-{"servers": [{"id": "srv-…", "name": "NAS (MediaMTX)", "host": "192.168.1.50", "srtPort": 8890,
-  "apiUrl": "http://192.168.1.50:9997", "isDefault": true, "allowWrites": false}]}
+{"servers": [{"id": "srv-…", "name": "NAS (MediaMTX)", "host": "192.0.2.10", "srtPort": 8890,
+  "apiUrl": "http://192.0.2.10:9997", "isDefault": true, "allowWrites": false}]}
 ```
 
 **`GetStreams`** `{serverId?}` — the server's paths, from its poller (every 2 s).
@@ -57,7 +57,7 @@ The answer is in `d.responseData.responseData`. To receive the events, identify 
 `rtmp` or `whip`; MediaMTX's default ports; no credentials added.
 
 ```json
-{"ok": true, "url": "srt://192.168.1.50:8890?streamid=publish:mob944"}
+{"ok": true, "url": "srt://192.0.2.10:8890?streamid=publish:mob944"}
 ```
 
 **`KickPublisher`** `{serverId?, path}` — drops the camera publishing to `path` so it reconnects. Only on a profile with
@@ -73,7 +73,7 @@ The answer is in `d.responseData.responseData`. To receive the events, identify 
 
 ```json
 {"feed": {
-  "sourceName": "mob944", "kind": "video", "serverId": "srv-…", "host": "192.168.1.50", "port": 8890, "path": "mob944",
+  "sourceName": "mob944", "kind": "video", "serverId": "srv-…", "host": "192.0.2.10", "port": 8890, "path": "mob944",
   "state": "LIVE",
   "fps": 29.97, "width": 1920, "height": 1080, "videoCodec": "h264", "audioCodec": "aac", "sampleRate": 48000,
   "channels": 2, "decoder": "d3d12va", "decoderSetting": 0, "nominalFps": 29.97, "decodeMs": 1.8,

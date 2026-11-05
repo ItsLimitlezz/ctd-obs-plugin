@@ -247,7 +247,7 @@ connect (`connected: video=h264 on d3d12va`).
 **Docks ▸ CTD Relay** connects OBS to CTD Relay (formerly CTD Multi-Stream; API v1.2 and later), the one service it
 talks to for everything after OBS:
 
-1. Type the server (e.g. `192.168.1.50:30080`) and press **Connect**. The dock shows a code. Approve it in CTD
+1. Type the server (e.g. `nas.local:30080`; there is no default) and press **Connect**. The dock shows a code. Approve it in CTD
    CTD Relay ▸ Settings ▸ API (**Open the approval page** takes you there); no token to copy.
 2. Pick the profile this OBS goes to (for example "Miami or Bust" or "DPRTMNT").
 3. The dock shows the profile's session (with the total watching across every platform), feed bitrates, every
@@ -491,7 +491,7 @@ correction, fps, audio rate, resyncs and reconnects every second (`--json` for o
 as `--live-within 3`, `--max-gap 6`, `--max-lateness 700` and `--monotonic` make it exit with code 2 when broken.
 
 ```bash
-ctd-live-probe --host 192.168.1.50 --port 8890 --path mob944 --seconds 60
+ctd-live-probe --host 192.0.2.10 --port 8890 --path mob944 --seconds 60
 ```
 
 Build it with the plugin by adding `-DENABLE_PROBE=ON` to the configure step, or on its own against the system FFmpeg
