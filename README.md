@@ -454,7 +454,7 @@ cmake --install build_macos --config RelWithDebInfo --prefix release
 
 **Ubuntu 24.04**, with `obs-studio` from `ppa:obsproject/obs-studio`, plus
 `cmake ninja-build pkg-config build-essential libsimde-dev libavcodec-dev
-libavformat-dev libavutil-dev libswresample-dev libswscale-dev`:
+libavformat-dev libavutil-dev libswresample-dev libswscale-dev libcurl4-openssl-dev`:
 
 ```bash
 cmake --preset ubuntu-x86_64 -DCMAKE_INSTALL_PREFIX=/usr
