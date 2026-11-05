@@ -26,7 +26,7 @@ Commands from README → Build (downloads OBS sources + deps into `.deps/` on fi
 - **Probe:** add `-DENABLE_PROBE=ON` to configure, or `cmake -S tools/ctd-live-probe -B build-probe`.
 - **Harness:** `bash test/scenarios.sh [T1 T2 T6 T11 ...]` (needs docker, curl, python3); `T6_MINUTES=3 bash test/scenarios.sh T6`. On Windows without Docker: `test/run-local.ps1`.
 - Formatting: clang-format 19 (C/C++) and gersemi (CMake); CI fails on diffs.
-- **Cloud can't build or run any of this.** Tag PRs `Needs local build: PC` (Windows) or `Needs local build: Mac` (macOS).
+- **Cloud can't build or run any of this.** Tag PRs `needs-build:pc` (Windows) or `needs-build:mac` (macOS).
 
 ## Release
 Open-source (GPL-2.0-or-later) so prod builds may use GitHub Actions. Per README: push a version tag such as `0.2.0` to `main`; `push.yaml` builds all three platforms and opens a **draft** GitHub release with the packages and checksums. `dispatch.yaml` is the manual build. Release still needs the hub's Senior check first. macOS packages are currently unsigned (see README → Install; signing helper `tools/macos-signing.ps1`).
