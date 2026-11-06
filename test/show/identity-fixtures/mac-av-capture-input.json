@@ -1,0 +1,5 @@
+{
+  "sourceType": "av_capture_input",
+  "settings": { "device": "FaceTime-HD-UUID-0001", "device_name": "FaceTime HD Camera" },
+  "expect": { "class": "video", "id": "FaceTime-HD-UUID-0001", "name": "FaceTime HD Camera", "vidPid": "" }
+}

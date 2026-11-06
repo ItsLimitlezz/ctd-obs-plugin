@@ -1,0 +1,5 @@
+{
+  "sourceType": "dshow_input",
+  "settings": { "video_device_id": "HD Pro #223A Webcam:\\\\?\\USB#VID_046D&PID_082D#ABC123DEF#{65e8773d-8f56-11d0-a3b9-00a0c9223196}" },
+  "expect": { "class": "video", "name": "HD Pro #3A Webcam", "vidPid": "046d:082d", "serial": "abc123def" }
+}
