@@ -137,7 +137,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/api/poller.c src/ui/hub-dock.cp
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/issues.c src/obs/sync-groups.c src/obs/webhook.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/obs-watch.c src/obs/servers.c src/ui/servers-dialog.cpp)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/http-client.c src/multistream.c src/ui/multistream-dock.cpp)
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obsws-config.c)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obsws-config.c src/show/devices-identity.c)
 if(WIN32)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32)
 endif()
@@ -162,3 +162,12 @@ if(ENABLE_PROBE)
     target_link_libraries(ltc-gen PRIVATE m)
   endif()
 endif()
+
+# Show Profiles pure-logic tests (ticket T6): C only, no libobs. Not part of "all"; build the target, then run ctest.
+#   cmake --build --preset <preset> --target ctd-show-tests && ctest --test-dir <build dir> -C RelWithDebInfo
+enable_testing()
+add_executable(ctd-show-tests EXCLUDE_FROM_ALL)
+target_sources(ctd-show-tests PRIVATE test/show/identity-test.c src/show/devices-identity.c)
+target_include_directories(ctd-show-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/show")
+file(GLOB CTD_SHOW_IDENTITY_FIXTURES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/test/show/identity-fixtures/*.json")
+add_test(NAME ctd-show-tests COMMAND ctd-show-tests ${CTD_SHOW_IDENTITY_FIXTURES})
