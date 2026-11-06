@@ -8,6 +8,7 @@
  */
 
 #include <obs-frontend-api.h>
+#include <util/config-file.h>
 #include <obs-module.h>
 #include <util/platform.h>
 
@@ -76,6 +77,87 @@ QString overlaySlot(obs_data_t *overlay)
 QString maskKey(const QString &key)
 {
 	return key.size() <= 6 ? QString("••••••") : key.left(6) + "••••••";
+}
+
+/* a host only reachable on its own network: loopback, RFC 1918, link-local, CGNAT, *.local, bare names */
+bool isLanHost(const QString &host)
+{
+	const QString h = host.trimmed().toLower();
+	if (h.isEmpty() || h == "localhost" || h.endsWith(".local") || h.endsWith(".lan") || h.endsWith(".home.arpa"))
+		return true;
+	const QStringList parts = h.split('.');
+	if (parts.size() == 4) {
+		int o[4];
+		for (int i = 0; i < 4; i++) {
+			bool ok = false;
+			o[i] = parts[i].toInt(&ok);
+			if (!ok || o[i] < 0 || o[i] > 255)
+				return false; /* a DNS name with four labels */
+		}
+		if (o[0] == 10 || o[0] == 127)
+			return true;
+		if (o[0] == 172 && o[1] >= 16 && o[1] <= 31)
+			return true;
+		if ((o[0] == 192 && o[1] == 168) || (o[0] == 169 && o[1] == 254))
+			return true;
+		return o[0] == 100 && o[1] >= 64 && o[1] <= 127;
+	}
+	if (h.contains(':')) {
+		/* IPv6; QUrl::host() gives it without brackets */
+		const QString v6 = QString(h).remove('[').remove(']');
+		return v6 == "::1" || v6.startsWith("fe80:") || v6.startsWith("fc") || v6.startsWith("fd");
+	}
+	return !h.contains('.'); /* a bare machine name, e.g. "nas" */
+}
+
+/* CTD Relay can hand back its LAN address (LAN_HTTP_HOST) even when this OBS reaches it through a public address,
+ * and that LAN IP is unreachable from another network. When the ingest host is a LAN address and the Relay address
+ * typed in the dock isn't, keep the RTMP port and path but use the Relay's host. Returns the server unchanged
+ * otherwise. */
+QString reachableIngestServer(const QString &server, const QString &relayAddress)
+{
+	QUrl ingest(server);
+	const QUrl relay = QUrl::fromUserInput(relayAddress.trimmed());
+	if (!ingest.isValid() || ingest.host().isEmpty() || !relay.isValid() || relay.host().isEmpty())
+		return server;
+	if (!isLanHost(ingest.host()) || isLanHost(relay.host()) || ingest.host() == relay.host())
+		return server;
+	ingest.setHost(relay.host());
+	return ingest.toString();
+}
+
+/* OBS's own Twitch "Dual Format" / Enhanced Broadcasting (multitrack video) sends straight to Twitch from OBS, so a
+ * stream to CTD Relay isn't what goes out. */
+bool obsMultitrackEnabled()
+{
+	config_t *profile = obs_frontend_get_profile_config();
+	return profile && config_get_bool(profile, "Stream1", "EnableMultitrackVideo");
+}
+
+const char *const kMultitrackWarning =
+	"OBS's Twitch Dual Format / multitrack video is on: the stream goes straight to Twitch and isn't private, even "
+	"in test mode. Turn it off in OBS's Settings → Stream.";
+
+/* Keyframe interval 2 s on the main stream encoder (Relay warns about long keyframes). Only the keyint_sec of the
+ * advanced-output encoder is touched; simple output already uses 2 s. Returns true when the setting is now 2 s. */
+bool setMainKeyframe2s()
+{
+	config_t *profile = obs_frontend_get_profile_config();
+	const char *mode = profile ? config_get_string(profile, "Output", "Mode") : nullptr;
+	if (!mode || std::string(mode) != "Advanced")
+		return false;
+	char *dir = obs_frontend_get_current_profile_path();
+	if (!dir)
+		return false;
+	const std::string path = std::string(dir) + "/streamEncoder.json";
+	bfree(dir);
+	obs_data_t *enc = obs_data_create_from_json_file_safe(path.c_str(), "bak");
+	if (!enc)
+		enc = obs_data_create();
+	obs_data_set_int(enc, "keyint_sec", 2);
+	const bool ok = obs_data_save_json_safe(enc, path.c_str(), "tmp", "bak");
+	obs_data_release(enc);
+	return ok;
 }
 
 /* The vertical canvas Aitum Stream Suite (or anything else) made with OBS's canvas API: the first canvas other than
@@ -150,6 +232,11 @@ public:
 		action_->setWordWrap(true);
 		action_->setProperty("ctdRole", "muted");
 		layout->addWidget(action_);
+		multitrackWarning_ = new QLabel(kMultitrackWarning, this);
+		multitrackWarning_->setWordWrap(true);
+		multitrackWarning_->setStyleSheet("color: #e5a50a; font-weight: bold;");
+		multitrackWarning_->hide();
+		layout->addWidget(multitrackWarning_);
 		approve_ = ctd::button(new QPushButton("Open the approval page →", this), ctd::Role::Primary);
 		layout->addWidget(approve_);
 
@@ -352,6 +439,7 @@ private:
 
 	void refresh()
 	{
+		multitrackWarning_->setVisible(obsMultitrackEnabled());
 		struct ms_snapshot s;
 		ms_snapshot_get(&s);
 		if (s.seq != lastSeq_) {
@@ -615,7 +703,8 @@ private:
 				"OBS is streaming. Stop the stream first, then send it to this profile.");
 			return;
 		}
-		const QString server = str(ingest, "serverUrl");
+		const QString offered = str(ingest, "serverUrl");
+		const QString server = reachableIngestServer(offered, server_->text());
 		QString landscapeKey, verticalKey, verticalUrl;
 		obs_data_array_t *feeds = obs_data_get_array(ingest, "feeds");
 		for (size_t i = 0; feeds && i < obs_data_array_count(feeds); i++) {
@@ -633,14 +722,29 @@ private:
 			QMessageBox::warning(this, "CTD Relay", "This profile has no landscape stream key.");
 			return;
 		}
+		if (server != offered && !offered.isEmpty() && verticalUrl.startsWith(offered))
+			verticalUrl = server + verticalUrl.mid(offered.size());
 
 		QString question = QString("Set OBS's main stream to this profile?\n\nServer: %1\nStream key: %2")
 					   .arg(server, maskKey(landscapeKey));
+		if (server != offered)
+			question +=
+				QString("\n(CTD Relay offered its LAN address %1, but this OBS reaches it through %2, "
+					"so %2 is used.)")
+					.arg(QUrl(offered).host(), QUrl(server).host());
 		if (!verticalKey.isEmpty())
 			question += QString("\n\nVertical (Aitum): %1, key %2\nAitum Stream Suite doesn't let other "
 					    "plugins set its outputs, so the vertical stream URL will be copied to the "
 					    "clipboard: paste it into Aitum's \"Vertical Stream\" output.")
 					    .arg(server, maskKey(verticalKey));
+		question +=
+			"\n\nThe main stream's keyframe interval will be set to 2 s (other encoder settings are left "
+			"alone).";
+		if (!verticalKey.isEmpty())
+			question += " Set the vertical output's keyframe interval to 2 s in Aitum yourself: other "
+				    "plugins can't change it.";
+		if (obsMultitrackEnabled())
+			question += QString("\n\nWarning: %1").arg(kMultitrackWarning);
 		if (QMessageBox::question(this, "CTD Relay", question) != QMessageBox::Yes)
 			return;
 
@@ -658,10 +762,12 @@ private:
 		obs_service_release(service);
 		if (!verticalUrl.isEmpty())
 			QApplication::clipboard()->setText(verticalUrl);
+		const bool keyframeSet = setMainKeyframe2s();
 		blog(LOG_INFO, "[ctd-live] CTD Relay: OBS's main stream now goes to the chosen profile");
 		action_->setText(
 			"OBS's main stream now goes to this profile." +
-			QString(verticalUrl.isEmpty() ? "" : " The vertical URL is on the clipboard for Aitum."));
+			QString(verticalUrl.isEmpty() ? "" : " The vertical URL is on the clipboard for Aitum.") +
+			QString(keyframeSet ? " Keyframe interval set to 2 s." : ""));
 	}
 
 	obs_data_t *selectedOverlay() const
@@ -801,6 +907,7 @@ private:
 	QPushButton *connect_;
 	QLabel *status_;
 	QLabel *action_;
+	QLabel *multitrackWarning_;
 	QPushButton *approve_;
 	QCheckBox *shareObsws_;
 	QLabel *shareStatus_;
