@@ -331,8 +331,11 @@ size_t cj_remove(cj *obj, const char *key)
 	size_t removed = 0;
 	if (!obj || obj->type != CJ_OBJECT || !key)
 		return 0;
+	char *name = dup_str(key); /* key may be a member's own key, freed below */
+	if (!name)
+		return 0;
 	for (size_t i = 0; i < obj->count;) {
-		if (strcmp(obj->members[i].key, key) == 0) {
+		if (strcmp(obj->members[i].key, name) == 0) {
 			free(obj->members[i].key);
 			cj_free(obj->members[i].val);
 			memmove(&obj->members[i], &obj->members[i + 1], (obj->count - i - 1) * sizeof(*obj->members));
@@ -342,6 +345,7 @@ size_t cj_remove(cj *obj, const char *key)
 			i++;
 		}
 	}
+	free(name);
 	return removed;
 }
 

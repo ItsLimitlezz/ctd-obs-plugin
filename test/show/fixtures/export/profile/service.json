@@ -1,0 +1,8 @@
+{
+    "type": "rtmp_custom",
+    "settings": {
+        "server": "rtmp://ingest.example.invalid/live",
+        "key": "FIXTURE-STREAM-KEY-5678",
+        "use_auth": false
+    }
+}

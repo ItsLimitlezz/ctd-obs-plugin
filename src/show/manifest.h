@@ -18,7 +18,8 @@ extern "C" {
 #define SHOW_NAME_MAX 64 /* characters of a show profile's name, in bytes of UTF-8 */
 
 /* Asset kinds (design 1.1). */
-extern const char *const show_asset_kinds[]; /* NULL-terminated: "lut", "image", "video", "audio", "font", "html", "other" */
+extern const char
+	*const show_asset_kinds[]; /* NULL-terminated: "lut", "image", "video", "audio", "font", "html", "other" */
 
 /* A new manifest: schema, showProfileId, name, revision 0, parentRevision 0, relayProfileId null, empty files/assets/
  * devices/overlays/secrets. */
