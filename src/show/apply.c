@@ -12,6 +12,9 @@
  *     again every 250 ms for up to 10 s.
  *  4. Failure at 2 or 3: the backup goes back, the previous collection + profile are loaded through the same proc,
  *     and the error is shown and logged. Success: the backup is deleted and the applied hooks run. */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE /* gethostname, gmtime_r, recursive mutexes in util/threading.h under -std=c17 */
+#endif
 #include "show-internal.h"
 #include "assets.h"
 #include "bundle.h"
