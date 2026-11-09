@@ -21,7 +21,7 @@
 #define INDEX_FILE "index.json"
 #define MAX_ENTRIES 2000
 
-struct entry {
+struct lib_entry {
 	char name[128];
 	char sha256[LIBRARY_SHA256_LEN + 1]; /* lowercase */
 	char file[LIBRARY_SHA256_LEN + 8];   /* "<sha256>.cube" */
@@ -29,13 +29,13 @@ struct entry {
 	bool have;                           /* the file is in the cache */
 };
 
-struct entry_list {
-	struct entry *items;
+struct lib_entry_list {
+	struct lib_entry *items;
 	size_t count;
 	size_t capacity;
 };
 
-static void list_push(struct entry_list *list, const struct entry *e)
+static void list_push(struct lib_entry_list *list, const struct lib_entry *e)
 {
 	if (list->count == list->capacity) {
 		list->capacity = list->capacity ? list->capacity * 2 : 32;
@@ -44,7 +44,7 @@ static void list_push(struct entry_list *list, const struct entry *e)
 	list->items[list->count++] = *e;
 }
 
-static void list_free(struct entry_list *list)
+static void list_free(struct lib_entry_list *list)
 {
 	bfree(list->items);
 	memset(list, 0, sizeof(*list));
@@ -99,7 +99,7 @@ static void file_path(struct dstr *out, const char *name)
 
 /* The library as Relay lists it: entries the mirror keeps (LUTs with a valid hash), at most MAX_ENTRIES. */
 static bool fetch_list(const char *api_base, const char *token, const char *profile, struct run *run,
-		       struct entry_list *list, enum http_status *status_out)
+		       struct lib_entry_list *list, enum http_status *status_out)
 {
 	struct dstr url = {0};
 	dstr_printf(&url, "%s/library?profile=%s&kind=lut", api_base, profile);
@@ -124,7 +124,7 @@ static bool fetch_list(const char *api_base, const char *token, const char *prof
 		const char *sha = obs_data_get_string(item, "sha256");
 		const char *name = obs_data_get_string(item, "name");
 		const char *ext = library_extension(obs_data_get_string(item, "kind"), name);
-		struct entry e = {0};
+		struct lib_entry e = {0};
 		if (ext && library_cache_name(sha, ext, e.file, sizeof(e.file))) {
 			library_display_name(name, e.name, sizeof(e.name));
 			memcpy(e.sha256, e.file, LIBRARY_SHA256_LEN);
@@ -141,7 +141,7 @@ static bool fetch_list(const char *api_base, const char *token, const char *prof
 
 /* Downloads one entry unless the cache already has that hash. Returns the transfer's status (HTTP_OK also when the
  * file was already there). The file only gets its hash name once the bytes hash to that name. */
-static enum http_status ensure_file(const struct entry *e, const char *api_base, const char *token, struct run *run,
+static enum http_status ensure_file(const struct lib_entry *e, const char *api_base, const char *token, struct run *run,
 				    bool *downloaded)
 {
 	struct dstr path = {0};
@@ -173,7 +173,7 @@ static enum http_status ensure_file(const struct entry *e, const char *api_base,
 	return status;
 }
 
-static void write_index(const char *profile, const struct entry_list *list)
+static void write_index(const char *profile, const struct lib_entry_list *list)
 {
 	obs_data_t *index = obs_data_create();
 	obs_data_set_int(index, "version", 1);
@@ -181,7 +181,7 @@ static void write_index(const char *profile, const struct entry_list *list)
 	obs_data_set_int(index, "syncedAt", (long long)time(NULL));
 	obs_data_array_t *items = obs_data_array_create();
 	for (size_t i = 0; i < list->count; i++) {
-		const struct entry *e = &list->items[i];
+		const struct lib_entry *e = &list->items[i];
 		if (!e->have)
 			continue;
 		obs_data_t *item = obs_data_create();
@@ -204,7 +204,7 @@ static void write_index(const char *profile, const struct entry_list *list)
 }
 
 /* Deletes what Relay no longer lists, and downloads left over from a crash. Files that aren't ours are left alone. */
-static int remove_stale(const struct entry_list *list)
+static int remove_stale(const struct lib_entry_list *list)
 {
 	const char **wanted = bzalloc(sizeof(char *) * (list->count + 1));
 	for (size_t i = 0; i < list->count; i++)
@@ -236,7 +236,7 @@ static void sync_library(const char *api_base, const char *token, const char *pr
 	struct run run = {.generation = generation};
 	os_mkdirs(lm.dir);
 
-	struct entry_list list = {0};
+	struct lib_entry_list list = {0};
 	enum http_status status = HTTP_OK;
 	if (!fetch_list(api_base, token, profile, &run, &list, &status)) {
 		if (status != HTTP_ABORTED && !run_interrupt(&run)) {
@@ -255,7 +255,7 @@ static void sync_library(const char *api_base, const char *token, const char *pr
 	int downloaded = 0, failed = 0;
 	bool refused = false;
 	for (size_t i = 0; i < list.count; i++) {
-		struct entry *e = &list.items[i];
+		struct lib_entry *e = &list.items[i];
 		bool fetched = false;
 		bool duplicate = false; /* the same hash listed twice: one file */
 		for (size_t j = 0; j < i; j++)
