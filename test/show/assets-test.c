@@ -99,7 +99,7 @@ static void test_rewrite_and_resolve(void)
 	unit_scratch_dir("assets-rewrite", dir, sizeof(dir));
 	make_file(dir, "Img.PNG", "image-bytes", img, sizeof(img));
 	make_file(dir, "Face.ttf", "font-bytes", font, sizeof(font));
-	make_file(dir, "aux.wav", "audio-bytes", aux, sizeof(aux));
+	make_file(dir, "track.wav", "audio-bytes", aux, sizeof(aux));
 	make_file(dir, "notes.bin", "other-bytes", other, sizeof(other));
 	snprintf(gone, sizeof(gone), "%s/gone.png", dir);
 
@@ -157,7 +157,7 @@ static void test_rewrite_and_resolve(void)
 	CHECK(o != NULL && strcmp(cj_get_str(o, "kind"), "other") == 0);
 
 	/* a global audio device object is scanned; objects that are not sources are not */
-	const cj *w = find_asset_by_name(manifest, "aux.wav");
+	const cj *w = find_asset_by_name(manifest, "track.wav");
 	CHECK(w != NULL && strcmp(cj_get_str(w, "kind"), "audio") == 0);
 	CHECK_STR(cj_get_str(cj_at(cj_get(w, "refs"), 0), "source"), "U6");
 
