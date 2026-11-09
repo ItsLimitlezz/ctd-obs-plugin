@@ -1,5 +1,8 @@
 /* Show Profiles in the plugin: state, save/update/delete, lifetime and hooks (design sections 2, 4, 7).
  * The switch itself (guard, staged apply, verify, rollback) is in apply.c. */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE /* gethostname, gmtime_r, recursive mutexes in util/threading.h under -std=c17 */
+#endif
 #include "show-internal.h"
 #include "export.h"
 #include "manifest.h"
