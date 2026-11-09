@@ -12,15 +12,21 @@
 
 #include <obs-module.h>
 
+#include <QCheckBox>
 #include <QColor>
 #include <QFont>
 #include <QFontDatabase>
 #include <QGraphicsDropShadowEffect>
+#include <QHBoxLayout>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QString>
+#include <QVBoxLayout>
 #include <QWidget>
 
 #include <cmath>
@@ -189,6 +195,9 @@ inline QString styleSheet()
 #ctdRoot QGroupBox { border: 1px solid #1a2127; border-radius: 4px; margin-top: 14px; padding: 10px 8px 8px 8px; }
 #ctdRoot QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; color: #39e7ff; }
 
+#ctdRoot QScrollArea#ctdScroll, #ctdRoot QWidget#ctdScrollViewport, #ctdRoot QWidget#ctdBody {
+	background: transparent; border: none; }
+
 #ctdRoot QScrollBar:vertical { background: #04070c; width: 8px; margin: 0; }
 #ctdRoot QScrollBar:horizontal { background: #04070c; height: 8px; margin: 0; }
 #ctdRoot QScrollBar::handle { background: #222b34; min-height: 24px; min-width: 24px; }
@@ -206,6 +215,89 @@ inline void applyTheme(QWidget *root)
 	root->setAttribute(Qt::WA_StyledBackground, true);
 	root->setStyleSheet(styleSheet());
 	root->setFont(font(Face::Mono, 12));
+}
+
+/* A dock's scrolling body. OBS (Qt) only lets a dock into an area that fits its minimum size, so a dock whose
+ * sections are all stacked in one fixed layout is too tall for most areas and won't dock. This scroll area asks for
+ * only `minHeight` of height (the sections keep their own minimum sizes, so nothing overlaps; they scroll instead),
+ * and for the content's own minimum width, so with no horizontal scroll bar nothing is ever cut off at the side. */
+class ScrollBody : public QScrollArea {
+public:
+	ScrollBody(QWidget *parent, int minHeight) : QScrollArea(parent), minHeight_(minHeight)
+	{
+		setObjectName("ctdScroll");
+		viewport()->setObjectName("ctdScrollViewport");
+		setFrameShape(QFrame::NoFrame);
+		setWidgetResizable(true);
+		setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+		setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+	}
+
+	QSize minimumSizeHint() const override
+	{
+		const int content = widget() ? widget()->minimumSizeHint().width() : 0;
+		return QSize(content + verticalScrollBar()->sizeHint().width() + 2 * frameWidth(), minHeight_);
+	}
+
+protected:
+	bool eventFilter(QObject *watched, QEvent *event) override
+	{
+		/* the content's minimum width changed (a row shown or hidden): the dock's minimum follows */
+		if (watched == widget() && event->type() == QEvent::LayoutRequest)
+			updateGeometry();
+		return QScrollArea::eventFilter(watched, event);
+	}
+
+private:
+	int minHeight_;
+};
+
+/* Puts a dock's content in a ScrollBody. Call after applyTheme(root); lay the dock out in the returned widget. */
+inline QWidget *scrollBody(QWidget *root, int minHeight = 120)
+{
+	auto *outer = new QVBoxLayout(root);
+	outer->setContentsMargins(0, 0, 0, 0);
+	outer->setSpacing(0);
+	auto *scroll = new ScrollBody(root, minHeight);
+	auto *body = new QWidget(scroll);
+	body->setObjectName("ctdBody");
+	scroll->setWidget(body);
+	outer->addWidget(scroll);
+	return body;
+}
+
+/* A checkbox whose text wraps in a narrow dock (QCheckBox's own text can't): the text is a label beside the box that
+ * toggles it when clicked, like the box's own text would. Returns the row to add to a layout. */
+class CheckLabel : public QLabel {
+public:
+	CheckLabel(const QString &text, QCheckBox *box, QWidget *parent) : QLabel(text, parent), box_(box)
+	{
+		setWordWrap(true);
+		setCursor(Qt::PointingHandCursor);
+		setToolTip(box->toolTip());
+	}
+
+protected:
+	void mouseReleaseEvent(QMouseEvent *event) override
+	{
+		if (event->button() == Qt::LeftButton && rect().contains(event->position().toPoint()) &&
+		    box_->isEnabled())
+			box_->click();
+		QLabel::mouseReleaseEvent(event);
+	}
+
+private:
+	QCheckBox *box_;
+};
+
+inline QHBoxLayout *wrappingCheckBox(QCheckBox *box, const QString &text, QWidget *parent)
+{
+	auto *row = new QHBoxLayout();
+	row->setSpacing(8);
+	box->setText(QString());
+	row->addWidget(box, 0, Qt::AlignTop);
+	row->addWidget(new CheckLabel(text, box, parent), 1);
+	return row;
 }
 
 /* Restyles a style-dependent widget after its ctdRole property changed */
