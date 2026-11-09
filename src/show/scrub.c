@@ -61,13 +61,16 @@ bool show_scrub_is_secret_name(const char *name)
 	if (n == 1 && in_list(words[0], exact))
 		return true;
 	/* "x_auth_token", "streamKey", "apikey" */
-	char joined[256] = "";
+	char joined[16 * 32] = "";
+	size_t used = 0;
 	for (size_t i = 0; i < n; i++) {
 		if (in_list(words[i], anywhere))
 			return true;
 		if (i > 0 && strcmp(words[i], "key") == 0 && in_list(words[i - 1], key_owners))
 			return true;
-		strncat(joined, words[i], sizeof(joined) - strlen(joined) - 1);
+		size_t len = strlen(words[i]); /* < 32, and at most 16 words: always fits */
+		memcpy(joined + used, words[i], len + 1);
+		used += len;
 	}
 	for (const char *const *w = anywhere; *w; w++)
 		if (strstr(joined, *w))
