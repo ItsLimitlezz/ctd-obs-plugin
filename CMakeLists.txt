@@ -49,9 +49,23 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       src/obs/ws-vendor.c
       src/obsws-config.c
       src/plugin-main.c
+      src/show/apply.c
+      src/show/assets.c
+      src/show/bundle.c
+      src/show/devices-identity.c
+      src/show/export.c
+      src/show/ini.c
+      src/show/json.c
+      src/show/manifest.c
+      src/show/scrub.c
+      src/show/sha256.c
+      src/show/show-fs.c
+      src/show/show.c
+      src/show/store.c
       src/ui/hub-dock.cpp
       src/ui/multistream-dock.cpp
       src/ui/servers-dialog.cpp
+      src/ui/show-section.cpp
   )
   target_include_directories(ctd-live-source PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
   target_link_libraries(
@@ -68,6 +82,7 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       Qt::Core
       Qt::Widgets
       $<$<PLATFORM_ID:Windows>:ws2_32>
+      $<$<PLATFORM_ID:Windows>:bcrypt>
   )
   set_target_properties_obs(
     ctd-live-source
