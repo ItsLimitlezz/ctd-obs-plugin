@@ -566,22 +566,29 @@ private:
 		obs_data_t *session = obs_data_get_obj(s.status, "session");
 		/* the title in ink; LIVE in magenta (on air); TEST in cyan */
 		const QString state = str(session, "status");
-		QString text = QString("<b style='color:#f2fbff'>%1</b> · %2")
-				       .arg(str(session, "title").toHtmlEscaped(),
-					    state == "live" ? QString("<b style='color:#ff00b8'>● LIVE</b>")
-							    : state.toHtmlEscaped());
+		/* only the parts that are there, so an untitled session doesn't start with a stray separator */
+		QStringList parts;
+		const QString title = str(session, "title").trimmed();
+		if (!title.isEmpty())
+			parts << QString("<b style='color:#f2fbff'>%1</b>").arg(title.toHtmlEscaped());
+		if (state == "live")
+			parts << "<b style='color:#ff00b8'>● LIVE</b>";
+		else if (!state.isEmpty())
+			parts << state.toHtmlEscaped();
 		if (obs_data_get_bool(session, "testMode"))
-			text += " · <b style='color:#39e7ff'>TEST</b>";
+			parts << "<b style='color:#39e7ff'>TEST</b>";
 		/* API v1.3: every platform's viewers added up, kept current by stream.status; absent while unknown */
 		if (obs_data_has_user_value(session, "viewers"))
-			text += QString(" · <b>%1</b> watching").arg(obs_data_get_int(session, "viewers"));
+			parts << QString("<b>%1</b> watching").arg(obs_data_get_int(session, "viewers"));
 		obs_data_release(session);
+		QString text = parts.join(" · ");
 
 		/* per-feed bitrates, kept current by feed.status */
 		obs_data_array_t *feeds = obs_data_get_array(s.status, "feeds");
 		for (size_t i = 0; feeds && i < obs_data_array_count(feeds); i++) {
 			obs_data_t *f = obs_data_array_item(feeds, i);
-			text += QString("<br>%1: %2")
+			text += QString("%1%2: %3")
+					.arg(text.isEmpty() ? QString() : QString("<br>"))
 					.arg(str(f, "feed").toHtmlEscaped(),
 					     obs_data_get_bool(f, "online")
 						     ? QString("%1 kbps").arg(obs_data_get_int(f, "bitrateKbps"))
