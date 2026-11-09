@@ -136,6 +136,18 @@ bool ctdVerticalCanvasAvailable()
 	return found;
 }
 
+/* True while the vertical canvas's stream is running (CTD OBS reports it as "active"; false when not detectable). */
+bool ctdVerticalStreaming()
+{
+	calldata_t cd = {};
+	const bool active = proc_handler_call(obs_get_proc_handler(), "ctd_vertical_get_output", &cd) &&
+			    calldata_bool(&cd, "active");
+	calldata_free(&cd);
+	return active;
+}
+
+const char *const kStopStreamingReason = "Stop streaming to change where OBS sends its stream.";
+
 /* Sets the vertical canvas's stream output (custom RTMP) and saves it; no dialog. False with a reason on failure. */
 bool setCtdVerticalOutput(const QString &server, const QString &key, QString &error)
 {
@@ -237,6 +249,8 @@ void wrapLines(QListWidget *list)
 
 class MultiStreamDock : public QWidget {
 public:
+	~MultiStreamDock() override { obs_frontend_remove_event_callback(frontendEvent, this); }
+
 	explicit MultiStreamDock(QWidget *parent) : QWidget(parent)
 	{
 		ctd::applyTheme(this);
@@ -315,6 +329,10 @@ public:
 		/* room for the primary button's 3 px offset shadow, so it never sits on the list above or the frame below */
 		destinationsLayout->addSpacing(4);
 		destinationsLayout->addWidget(route_);
+		routeReason_ = new QLabel(kStopStreamingReason, destinationsBox);
+		routeReason_->setWordWrap(true);
+		routeReason_->setVisible(false);
+		destinationsLayout->addWidget(routeReason_);
 		destinationsLayout->addSpacing(3);
 		ctd::eyebrowTitle(destinationsBox);
 		layout->addWidget(destinationsBox, 1);
@@ -377,9 +395,14 @@ public:
 			ms_set_profile(profile_->itemData(index).toString().toUtf8().constData());
 		});
 		QObject::connect(route_, &QPushButton::clicked, this, [this] {
+			if (streamingBlocked()) {
+				updateRoute();
+				QMessageBox::information(this, "CTD Relay", kStopStreamingReason);
+				return;
+			}
 			wantIngest_ = true;
 			ms_request_ingest();
-			route_->setEnabled(false);
+			updateRoute();
 		});
 		QObject::connect(addOverlay_, &QPushButton::clicked, this, [this] {
 			obs_data_t *overlay = selectedOverlay();
@@ -399,6 +422,7 @@ public:
 			ms_request_overlay(name.toUtf8().constData(), askCanvas_->currentText().toUtf8().constData());
 		});
 
+		obs_frontend_add_event_callback(frontendEvent, this);
 		auto *timer = new QTimer(this);
 		QObject::connect(timer, &QTimer::timeout, this, [this] { refresh(); });
 		timer->start(500);
@@ -522,11 +546,31 @@ private:
 		}
 		if (wantIngest_ && s.ingest_seq != lastIngestSeq_) {
 			wantIngest_ = false;
-			route_->setEnabled(true);
+			updateRoute();
 			applyIngest(s.ingest);
 		}
 		lastIngestSeq_ = s.ingest_seq;
 		ms_snapshot_free(&s);
+	}
+
+	static void frontendEvent(enum obs_frontend_event event, void *data)
+	{
+		if (event != OBS_FRONTEND_EVENT_STREAMING_STARTING && event != OBS_FRONTEND_EVENT_STREAMING_STARTED &&
+		    event != OBS_FRONTEND_EVENT_STREAMING_STOPPED)
+			return;
+		auto *self = static_cast<MultiStreamDock *>(data);
+		QMetaObject::invokeMethod(self, [self] { self->updateRoute(); }, Qt::QueuedConnection);
+	}
+
+	/* OBS's main stream or the vertical canvas's is running: the button would change a live output */
+	static bool streamingBlocked() { return obs_frontend_streaming_active() || ctdVerticalStreaming(); }
+
+	void updateRoute()
+	{
+		const bool blocked = streamingBlocked();
+		route_->setEnabled(connected_ && !wantIngest_ && !blocked);
+		route_->setToolTip(blocked ? kStopStreamingReason : QString());
+		routeReason_->setVisible(blocked);
 	}
 
 	void showConnection(const ms_snapshot &s)
@@ -556,7 +600,8 @@ private:
 		shareStatus_->setText(QString::fromUtf8(s.obs_websocket_message));
 		shareStatus_->setVisible(s.link != MS_DISCONNECTED && *s.obs_websocket_message);
 		profile_->setEnabled(connected && !s.profile_locked);
-		route_->setEnabled(connected && !wantIngest_);
+		connected_ = connected;
+		updateRoute();
 		addOverlay_->setEnabled(connected);
 		switchOverlays_->setEnabled(connected);
 		ask_->setEnabled(connected && s.overlay_request != MS_OVERLAY_SENDING &&
@@ -747,10 +792,8 @@ private:
 					     "ingest:read permission (approve it again in CTD Relay).");
 			return;
 		}
-		if (obs_frontend_streaming_active()) {
-			QMessageBox::information(
-				this, "CTD Relay",
-				"OBS is streaming. Stop the stream first, then send it to this profile.");
+		if (streamingBlocked()) {
+			QMessageBox::information(this, "CTD Relay", kStopStreamingReason);
 			return;
 		}
 		const QString offered = str(ingest, "serverUrl");
@@ -1002,6 +1045,8 @@ private:
 	QListWidget *destinations_;
 	QListWidget *alerts_;
 	QPushButton *route_;
+	QLabel *routeReason_;
+	bool connected_ = false;
 	QListWidget *overlays_;
 	QPushButton *addOverlay_;
 	QPushButton *switchOverlays_;
