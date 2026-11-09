@@ -24,6 +24,11 @@ find_package(FFmpeg REQUIRED COMPONENTS swresample swscale)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE FFmpeg::avcodec FFmpeg::avformat FFmpeg::avutil)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE FFmpeg::swresample FFmpeg::swscale)
 
+# libcurl for streaming file transfers to and from CTD Relay (Show Profiles, docs/show-profiles-s2.md). Also the copy OBS
+# runs with: obs-deps' libcurl.dll (Schannel) on Windows, the SDK's on macOS, the system's on Linux. Nothing is bundled.
+find_package(CURL REQUIRED)
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE CURL::libcurl)
+
 if(ENABLE_FRONTEND_API)
   find_package(obs-frontend-api REQUIRED)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::obs-frontend-api)
@@ -67,6 +72,15 @@ if(WIN32)
 endif()
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
+
+# Show Profiles library mirror (ticket T14): LUTs from the profile's CTD Relay library, cached in the plugin's config
+# folder. library-plan.c is pure C (no libobs) and has its own tests; build the target, then run ctest:
+#   cmake --build --preset <preset> --target ctd-library-tests && ctest --test-dir <build dir> -C RelWithDebInfo
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/show/library-mirror.c src/show/library-plan.c)
+enable_testing()
+add_executable(ctd-library-tests EXCLUDE_FROM_ALL)
+target_sources(ctd-library-tests PRIVATE test/show/library-test.c src/show/library-plan.c)
+add_test(NAME ctd-library-tests COMMAND ctd-library-tests)
 
 # ctd-live-probe (SPEC E5): the engine on the command line, for the test harness
 option(ENABLE_PROBE "Build the ctd-live-probe command-line tool" OFF)
