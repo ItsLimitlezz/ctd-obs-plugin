@@ -126,6 +126,33 @@ QString reachableIngestServer(const QString &server, const QString &relayAddress
 	return ingest.toString();
 }
 
+/* The vertical canvas built into CTD OBS (ctd-vertical-canvas) lets other plugins set its stream output through these
+ * procs. Stock OBS and Aitum's own plugins don't have them. */
+bool ctdVerticalCanvasAvailable()
+{
+	calldata_t cd = {};
+	const bool found = proc_handler_call(obs_get_proc_handler(), "ctd_vertical_get_output", &cd);
+	calldata_free(&cd);
+	return found;
+}
+
+/* Sets the vertical canvas's stream output (custom RTMP) and saves it; no dialog. False with a reason on failure. */
+bool setCtdVerticalOutput(const QString &server, const QString &key, QString &error)
+{
+	calldata_t cd = {};
+	calldata_set_string(&cd, "server", server.toUtf8().constData());
+	calldata_set_string(&cd, "key", key.toUtf8().constData());
+	bool ok = false;
+	if (!proc_handler_call(obs_get_proc_handler(), "ctd_vertical_set_output", &cd)) {
+		error = "the vertical canvas isn't loaded";
+	} else {
+		ok = calldata_bool(&cd, "success");
+		error = QString::fromUtf8(calldata_string(&cd, "error"));
+	}
+	calldata_free(&cd);
+	return ok;
+}
+
 /* OBS's own Twitch "Dual Format" / Enhanced Broadcasting (multitrack video) sends straight to Twitch from OBS, so a
  * stream to CTD Relay isn't what goes out. */
 bool obsMultitrackEnabled()
@@ -722,8 +749,15 @@ private:
 			QMessageBox::warning(this, "CTD Relay", "This profile has no landscape stream key.");
 			return;
 		}
+		/* the vertical feed's server: its full URL without the key (else the main server), with the same
+		 * LAN-to-public host swap as the main stream */
+		QString verticalServer = server;
+		if (!verticalKey.isEmpty() && verticalUrl.endsWith("/" + verticalKey))
+			verticalServer =
+				reachableIngestServer(verticalUrl.chopped(verticalKey.size() + 1), server_->text());
 		if (server != offered && !offered.isEmpty() && verticalUrl.startsWith(offered))
 			verticalUrl = server + verticalUrl.mid(offered.size());
+		const bool ctdVertical = !verticalKey.isEmpty() && ctdVerticalCanvasAvailable();
 
 		QString question = QString("Set OBS's main stream to this profile?\n\nServer: %1\nStream key: %2")
 					   .arg(server, maskKey(landscapeKey));
@@ -732,17 +766,26 @@ private:
 				QString("\n(CTD Relay offered its LAN address %1, but this OBS reaches it through %2, "
 					"so %2 is used.)")
 					.arg(QUrl(offered).host(), QUrl(server).host());
-		if (!verticalKey.isEmpty())
+		if (ctdVertical)
+			question +=
+				QString("\n\nThe vertical canvas's stream is set too (its \"CTD Relay\" output), so the "
+					"vertical feed goes live with the main stream:\nServer: %1\nStream key: %2")
+					.arg(verticalServer, maskKey(verticalKey));
+		else if (!verticalKey.isEmpty())
 			question += QString("\n\nVertical (Aitum): %1, key %2\nAitum Stream Suite doesn't let other "
 					    "plugins set its outputs, so the vertical stream URL will be copied to the "
 					    "clipboard: paste it into Aitum's \"Vertical Stream\" output.")
-					    .arg(server, maskKey(verticalKey));
+					    .arg(verticalServer, maskKey(verticalKey));
 		question +=
 			"\n\nThe main stream's keyframe interval will be set to 2 s (other encoder settings are left "
 			"alone).";
 		if (!verticalKey.isEmpty())
-			question += " Set the vertical output's keyframe interval to 2 s in Aitum yourself: other "
-				    "plugins can't change it.";
+			question +=
+				ctdVertical
+					? " The vertical canvas's stream uses 2 s too unless you set your own interval in "
+					  "its settings."
+					: " Set the vertical output's keyframe interval to 2 s in Aitum yourself: other "
+					  "plugins can't change it.";
 		if (obsMultitrackEnabled())
 			question += QString("\n\nWarning: %1").arg(kMultitrackWarning);
 		if (QMessageBox::question(this, "CTD Relay", question) != QMessageBox::Yes)
@@ -762,14 +805,33 @@ private:
 		obs_frontend_set_streaming_service(service);
 		obs_frontend_save_streaming_service();
 		obs_service_release(service);
-		if (!verticalUrl.isEmpty())
+
+		QString verticalNote;
+		bool verticalSet = false;
+		bool clipboard = !ctdVertical && !verticalUrl.isEmpty();
+		if (ctdVertical) {
+			QString error;
+			verticalSet = setCtdVerticalOutput(verticalServer, verticalKey, error);
+			if (verticalSet) {
+				verticalNote = QString(" The vertical canvas's stream goes there too.");
+			} else {
+				blog(LOG_WARNING, "[ctd-live] CTD Relay: couldn't set the vertical canvas's stream: %s",
+				     error.toUtf8().constData());
+				clipboard = !verticalUrl.isEmpty();
+				verticalNote =
+					QString(" Couldn't set the vertical canvas's stream (%1)%2.")
+						.arg(error, QString(clipboard ? "; its URL is on the clipboard" : ""));
+			}
+		} else if (clipboard) {
+			verticalNote = QString(" The vertical URL is on the clipboard for Aitum.");
+		}
+		if (clipboard)
 			QApplication::clipboard()->setText(verticalUrl);
 		const bool keyframeSet = setMainKeyframe2s();
-		blog(LOG_INFO, "[ctd-live] CTD Relay: OBS's main stream now goes to the chosen profile");
-		action_->setText(
-			"OBS's main stream now goes to this profile." +
-			QString(verticalUrl.isEmpty() ? "" : " The vertical URL is on the clipboard for Aitum.") +
-			QString(keyframeSet ? " Keyframe interval set to 2 s." : ""));
+		blog(LOG_INFO, "[ctd-live] CTD Relay: OBS's main stream now goes to the chosen profile%s",
+		     verticalSet ? ", and the vertical canvas's too" : "");
+		action_->setText(QString("OBS's main stream now goes to this profile.") + verticalNote +
+				 QString(keyframeSet ? " Keyframe interval set to 2 s." : ""));
 	}
 
 	obs_data_t *selectedOverlay() const
