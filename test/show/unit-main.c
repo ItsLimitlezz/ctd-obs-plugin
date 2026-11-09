@@ -22,8 +22,8 @@ static const struct {
 	const char *name;
 	void (*fn)(void);
 } suites[] = {
-	{"json", test_json},   {"manifest", test_manifest}, {"scrub", test_scrub},   {"store", test_store},
-	{"assets", test_assets}, {"ini", test_ini},         {"export", test_export},
+	{"json", test_json},     {"manifest", test_manifest}, {"scrub", test_scrub},   {"store", test_store},
+	{"assets", test_assets}, {"ini", test_ini},           {"export", test_export},
 };
 
 void unit_fixture_path(const char *name, char *out, size_t size)

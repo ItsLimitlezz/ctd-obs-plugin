@@ -26,9 +26,9 @@ struct show_export_input {
 	const char *app_id;          /* manifest.savedBy.appId */
 	const char *os;              /* "windows", "macos", "linux" */
 	const char *obs_version, *ctd_obs_version, *plugin_version; /* manifest.versions ("" when unknown) */
-	const char *saved_at;           /* ISO 8601 UTC, e.g. "2026-11-05T20:00:00Z" */
-	const cj *previous_manifest;    /* the profile's head manifest, or NULL: relayProfileId and revisions carry over */
-	show_hash_fn hash;              /* NULL: plain sha256_file */
+	const char *saved_at;                                       /* ISO 8601 UTC, e.g. "2026-11-05T20:00:00Z" */
+	const cj *previous_manifest; /* the profile's head manifest, or NULL: relayProfileId and revisions carry over */
+	show_hash_fn hash;           /* NULL: plain sha256_file */
 	void *hash_opaque;
 };
 

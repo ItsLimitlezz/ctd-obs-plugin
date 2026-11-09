@@ -39,6 +39,7 @@
 
 #include "../multistream.h"
 #include "icons.hpp"
+#include "show-section.hpp"
 
 namespace {
 
@@ -297,6 +298,10 @@ public:
 		clock_->hide();
 		layout->addWidget(clock_);
 
+		/* show profiles (T12): hidden on stock OBS */
+		showProfiles_ = new ShowProfilesSection(this);
+		layout->addWidget(showProfiles_);
+
 		/* destinations and alerts (H20, H23, H25) */
 		auto *destinationsBox = new QGroupBox("Destinations", this);
 		auto *destinationsLayout = new QVBoxLayout(destinationsBox);
@@ -483,6 +488,7 @@ private:
 	void refresh()
 	{
 		multitrackWarning_->setVisible(obsMultitrackEnabled());
+		showProfiles_->refresh();
 		struct ms_snapshot s;
 		ms_snapshot_get(&s);
 		if (s.seq != lastSeq_) {
@@ -999,6 +1005,7 @@ private:
 	QCheckBox *shareObsws_;
 	QLabel *shareStatus_;
 	QComboBox *profile_;
+	ShowProfilesSection *showProfiles_;
 	QLabel *session_;
 	QLabel *clock_;
 	QListWidget *destinations_;

@@ -50,28 +50,28 @@ enum show_busy {
 struct show_entry {
 	char id[37];
 	char *name;
-	int64_t head_seq;         /* local revisions saved (0 = none yet) */
-	int64_t revision;         /* Relay revision of the head, 0 = never on Relay */
-	bool dirty;               /* "Not backed up": saved here, not on Relay yet */
-	bool active;              /* its collection is the one loaded in OBS now */
-	char *saved_at;           /* ISO 8601, "" when never */
-	char *last_applied_at;    /* ISO 8601, "" when never switched to on this machine */
-	char *relay_profile_id;   /* "" when local only */
-	int needs_reentry;        /* secrets from another machine that have no value here (last switch) */
+	int64_t head_seq;       /* local revisions saved (0 = none yet) */
+	int64_t revision;       /* Relay revision of the head, 0 = never on Relay */
+	bool dirty;             /* "Not backed up": saved here, not on Relay yet */
+	bool active;            /* its collection is the one loaded in OBS now */
+	char *saved_at;         /* ISO 8601, "" when never */
+	char *last_applied_at;  /* ISO 8601, "" when never switched to on this machine */
+	char *relay_profile_id; /* "" when local only */
+	int needs_reentry;      /* secrets from another machine that have no value here (last switch) */
 };
 
 struct show_state {
-	bool available;         /* CTD OBS core procs present */
-	enum show_busy busy;    /* what the worker is doing */
-	char *message;          /* the last outcome or the current step, one line for the dock ("" when none) */
+	bool available;      /* CTD OBS core procs present */
+	enum show_busy busy; /* what the worker is doing */
+	char *message;       /* the last outcome or the current step, one line for the dock ("" when none) */
 	bool message_is_error;
-	char *active_id;        /* the show profile whose collection is loaded, "" when none */
-	bool live;              /* an output is active: switching is blocked (design section 6) */
-	char *live_reason;      /* why, e.g. "Stop streaming first." ("" when not live) */
+	char *active_id;            /* the show profile whose collection is loaded, "" when none */
+	bool live;                  /* an output is active: switching is blocked (design section 6) */
+	char *live_reason;          /* why, e.g. "Stop streaming first." ("" when not live) */
 	struct show_entry *entries; /* sorted by name */
 	size_t count;
-	cj *warnings;           /* strings from the last operation (missing asset files, encoder fallback, ...) */
-	uint64_t seq;           /* goes up whenever anything above changes */
+	cj *warnings; /* strings from the last operation (missing asset files, encoder fallback, ...) */
+	uint64_t seq; /* goes up whenever anything above changes */
 };
 
 /* A copy of the current state; free it with show_state_free. Any thread. */
@@ -95,13 +95,13 @@ bool show_delete(const char *id);
 /* ---- hooks for M3 (sync, T11) and M4 (device mapping, T13) ---- */
 
 struct show_stage_ctx {
-	const char *id;        /* show profile */
-	int64_t seq;           /* local revision being applied */
-	const cj *manifest;    /* the revision's manifest (validated) */
-	cj *collection;        /* the collection about to be written: assets and local secrets already filled in */
-	cj *service;           /* the service.json about to be written (object; may be edited, e.g. the ingest key) */
-	const char *machine;   /* this machine's file-safe name (device maps) */
-	cj *warnings;          /* append strings for the dock */
+	const char *id;      /* show profile */
+	int64_t seq;         /* local revision being applied */
+	const cj *manifest;  /* the revision's manifest (validated) */
+	cj *collection;      /* the collection about to be written: assets and local secrets already filled in */
+	cj *service;         /* the service.json about to be written (object; may be edited, e.g. the ingest key) */
+	const char *machine; /* this machine's file-safe name (device maps) */
+	cj *warnings;        /* append strings for the dock */
 };
 /* Runs on the worker thread while staging, before anything is written into OBS's folders, in the order added.
  * Nothing in OBS has changed yet, so a hook may block (network) and may fail: returning false aborts the switch with

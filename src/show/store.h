@@ -54,8 +54,8 @@ enum show_save_origin {
 /* Validates the manifest, caches every asset in b->asset_sources (hash checked), writes the bundle as revision
  * headSeq + 1, writes b->local to local.json (merged over what is there: values from other revisions stay), updates
  * meta and prunes old revisions (keeping the newest SHOW_KEEP_REVISIONS plus the applied one). */
-bool show_store_save(const char *id, struct show_bundle *b, enum show_save_origin origin, int64_t *seq_out,
-		     char *err, size_t err_size);
+bool show_store_save(const char *id, struct show_bundle *b, enum show_save_origin origin, int64_t *seq_out, char *err,
+		     size_t err_size);
 /* Loads a revision (seq 0 = head) and checks every file against checksums.json and the manifest; local is loaded
  * from local.json. Fails on any mismatch: a corrupt bundle is never applied. */
 bool show_store_load(const char *id, int64_t seq, struct show_bundle *b, char *err, size_t err_size);

@@ -25,8 +25,8 @@ bool sfs_read(const char *path, char **data, size_t *size);
 bool sfs_write_atomic(const char *path, const void *data, size_t size);
 /* Renames a file or a directory; a file replaces an existing file. A directory target must not exist. */
 bool sfs_rename(const char *from, const char *to);
-bool sfs_remove(const char *path);      /* a file; true if it is gone afterwards */
-bool sfs_remove_tree(const char *path); /* a directory and everything in it; true if gone afterwards */
+bool sfs_remove(const char *path);                    /* a file; true if it is gone afterwards */
+bool sfs_remove_tree(const char *path);               /* a directory and everything in it; true if gone afterwards */
 bool sfs_copy_file(const char *from, const char *to); /* atomic, like sfs_write_atomic */
 bool sfs_copy_tree(const char *from, const char *to); /* to must not exist */
 
