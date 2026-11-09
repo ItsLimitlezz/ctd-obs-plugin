@@ -254,7 +254,9 @@ talks to for everything after OBS:
    destination (red when down, with the reason) and the merged chat. "Joined" lines from Instagram and TikTok are
    dimmed.
 4. **Send OBS's stream to this profile…** sets OBS's stream server and key from the profile (never while
-   streaming; the key is shown masked). The vertical feed's URL is copied for Aitum Vertical.
+   streaming; the key is shown masked). In CTD OBS it also sets the built-in vertical canvas's stream (a "CTD
+   Relay" output) to the profile's vertical feed, so both feeds go live together. In stock OBS the vertical feed's
+   URL is copied for Aitum Vertical instead.
 5. **Overlays** lists the profile's overlays from CTD Overlay. **Add to current scene** creates a browser source at
    the overlay's size. After a profile change, **Switch existing to this profile** points those sources at the new
    profile's matching overlays (same slot and canvas), so the scenes carry over. Nothing is ever deleted.
