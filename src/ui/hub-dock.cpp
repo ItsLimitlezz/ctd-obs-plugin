@@ -130,13 +130,17 @@ public:
 	explicit HubDock(QWidget *parent) : QWidget(parent)
 	{
 		ctd::applyTheme(this);
-		auto *layout = new QVBoxLayout(this);
-		layout->setSpacing(8);
+		/* scrolls instead of squashing, so the dock fits (and docks into) any area */
+		auto *layout = new QVBoxLayout(ctd::scrollBody(this));
+		layout->setSpacing(10);
 		layout->addLayout(ctdHeader(this, "obs-plugin-64.png", "CTD Hub"));
 
 		/* H9: the profile and its status */
 		auto *top = new QHBoxLayout();
 		profile_ = new QComboBox(this);
+		/* a long profile or scene name shortens in the box rather than widening the dock */
+		profile_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+		profile_->setMinimumContentsLength(10);
 		auto *manage = new QPushButton("Manage…", this);
 		/* S16: the sync clip, for a source's sync check; opens in the browser, to show on a phone or a screen */
 		auto *clip = new QPushButton("Sync clip", this);
@@ -177,6 +181,8 @@ public:
 		auto *autoRow = new QHBoxLayout();
 		autoAdd_ = new QCheckBox("Auto-add new live streams to", this);
 		autoScene_ = new QComboBox(this);
+		autoScene_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+		autoScene_->setMinimumContentsLength(8);
 		autoRow->addWidget(autoAdd_);
 		autoRow->addWidget(autoScene_, 1);
 		layout->addLayout(autoRow);
@@ -201,11 +207,13 @@ public:
 		table_->horizontalHeader()->setSectionResizeMode(ColInObs, QHeaderView::Stretch);
 		table_->horizontalHeader()->setFont(ctd::font(ctd::Face::Mono, 10, QFont::Bold, true, 1.0));
 		table_->setShowGrid(false);
+		table_->setMinimumHeight(110);
 		layout->addWidget(table_, 1);
 
 		/* D2: the issues panel; hover one for its likely cause */
 		layout->addWidget(ctd::eyebrow("Issues", this));
 		issues_ = new QListWidget(this);
+		issues_->setMinimumHeight(48);
 		issues_->setMaximumHeight(110);
 		issues_->setWordWrap(true);
 		issues_->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -236,6 +244,7 @@ public:
 		sync_->setColumnCount(5);
 		sync_->setHeaderLabels({"Group / source", "State", "Timecode", "Offset", "Delay"});
 		sync_->setRootIsDecorated(true);
+		sync_->setMinimumHeight(70);
 		sync_->setMaximumHeight(140);
 		sync_->header()->setStretchLastSection(false);
 		sync_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
