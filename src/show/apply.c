@@ -311,7 +311,7 @@ static bool stage(struct apply_job *job, char *err, size_t err_size)
 	/* write the staged files */
 	sfs_remove_tree(job->staging);
 	if (!sfs_mkdirs(job->staged_profile)) {
-		snprintf(err, err_size, "Can't write in %s.", job->staging);
+		snprintf(err, err_size, "Can't write in %.400s.", job->staging);
 		goto done;
 	}
 	text = cj_print(b.collection, true);
@@ -405,14 +405,14 @@ static void rollback(struct apply_job *job, const char *why, bool reload)
 		sfs_rename(job->backup_profile, job->target_profile);
 	bool restored = !reload || (job->prev_collection_path[0] && job->prev_profile_path[0] &&
 				    core_apply(job->prev_collection_path, job->prev_profile_path, err, sizeof(err)));
-	char message[700];
+	char message[2048];
 	if (restored)
-		snprintf(message, sizeof(message), "Couldn't switch to %s: %s Your previous setup is back.", job->name,
-			 why);
+		snprintf(message, sizeof(message), "Couldn't switch to %s: %.600s Your previous setup is back.",
+			 job->name, why);
 	else
 		snprintf(message, sizeof(message),
-			 "Couldn't switch to %s: %s Then the previous setup couldn't be reloaded (%s): pick \"%s\" in "
-			 "Scene Collection and \"%s\" in Profile.",
+			 "Couldn't switch to %s: %.600s Then the previous setup couldn't be reloaded (%.250s): pick "
+			 "\"%.250s\" in Scene Collection and \"%.250s\" in Profile.",
 			 job->name, why, err[0] ? err : "not found", job->prev_collection_name, job->prev_profile_name);
 	sfs_remove_tree(job->staging);
 	fail_job(job, message);
