@@ -213,8 +213,9 @@ public:
 	explicit MultiStreamDock(QWidget *parent) : QWidget(parent)
 	{
 		ctd::applyTheme(this);
-		auto *layout = new QVBoxLayout(this);
-		layout->setSpacing(8);
+		/* scrolls instead of squashing, so the dock fits (and docks into) any area */
+		auto *layout = new QVBoxLayout(ctd::scrollBody(this));
+		layout->setSpacing(10);
 		layout->addLayout(ctdHeader(this, "relay-64.png", "CTD Relay"));
 
 		/* connection (H18) */
@@ -243,14 +244,19 @@ public:
 		/* profile (H19) */
 		auto *profileRow = new QFormLayout();
 		profile_ = new QComboBox(this);
+		/* a long profile name shortens in the box rather than widening the dock */
+		profile_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+		profile_->setMinimumContentsLength(10);
+		profileRow->setRowWrapPolicy(QFormLayout::WrapLongRows);
 		profileRow->addRow("This OBS goes to", profile_);
 		layout->addLayout(profileRow);
 		/* API v1.6: CTD Live mobile reaches OBS through the hub, only when the user says so (it shares a password) */
-		shareObsws_ = new QCheckBox("Let CTD Live mobile control this OBS through CTD Relay", this);
+		shareObsws_ = new QCheckBox(this);
 		shareObsws_->setToolTip(
 			"Sends OBS's WebSocket settings (Tools > WebSocket Server Settings), password "
 			"included, to CTD Relay, and keeps them current. Untick to make CTD Relay forget them.");
-		layout->addWidget(shareObsws_);
+		layout->addLayout(ctd::wrappingCheckBox(
+			shareObsws_, "Let CTD Live mobile control this OBS through CTD Relay", this));
 		shareStatus_ = new QLabel(this);
 		shareStatus_->setWordWrap(true);
 		layout->addWidget(shareStatus_);
@@ -267,27 +273,36 @@ public:
 		/* destinations and alerts (H20, H23, H25) */
 		auto *destinationsBox = new QGroupBox("Destinations", this);
 		auto *destinationsLayout = new QVBoxLayout(destinationsBox);
+		destinationsLayout->setSpacing(8);
 		destinations_ = new QListWidget(destinationsBox);
-		destinations_->setMinimumHeight(120);
+		destinations_->setMinimumHeight(96);
 		wrapLines(destinations_);
-		destinationsLayout->addWidget(destinations_);
+		destinationsLayout->addWidget(destinations_, 1);
 		alerts_ = new QListWidget(destinationsBox);
+		alerts_->setMinimumHeight(48);
 		alerts_->setMaximumHeight(110);
 		wrapLines(alerts_);
 		destinationsLayout->addWidget(alerts_);
 		route_ = new QPushButton("Send OBS's stream to this profile →", destinationsBox);
 		ctd::button(route_, ctd::Role::Primary);
+		/* room for the primary button's 3 px offset shadow, so it never sits on the list above or the frame below */
+		destinationsLayout->addSpacing(4);
 		destinationsLayout->addWidget(route_);
+		destinationsLayout->addSpacing(3);
 		ctd::eyebrowTitle(destinationsBox);
-		layout->addWidget(destinationsBox);
+		layout->addWidget(destinationsBox, 1);
 
 		/* overlays (H21, H22) */
 		auto *overlaysBox = new QGroupBox("Overlays", this);
 		auto *overlaysLayout = new QVBoxLayout(overlaysBox);
+		overlaysLayout->setSpacing(8);
 		overlays_ = new QListWidget(overlaysBox);
 		overlays_->setMinimumHeight(70);
-		overlaysLayout->addWidget(overlays_);
-		auto *overlayButtons = new QHBoxLayout();
+		wrapLines(overlays_);
+		overlaysLayout->addWidget(overlays_, 1);
+		/* stacked, not side by side, so the dock stays narrow enough for a side dock area */
+		auto *overlayButtons = new QVBoxLayout();
+		overlayButtons->setSpacing(6);
 		addOverlay_ = new QPushButton("Add to its canvas", overlaysBox);
 		switchOverlays_ = new QPushButton("Switch existing to this profile", overlaysBox);
 		ctd::button(addOverlay_);
@@ -295,15 +310,15 @@ public:
 		overlayButtons->addWidget(addOverlay_);
 		overlayButtons->addWidget(switchOverlays_);
 		overlaysLayout->addLayout(overlayButtons);
-		auto *askRow = new QHBoxLayout();
 		template_ = new QLineEdit(overlaysBox);
 		template_->setPlaceholderText("CTD Overlay template, e.g. takeover");
 		askCanvas_ = new QComboBox(overlaysBox);
 		askCanvas_->addItem("landscape");
 		askCanvas_->addItem("vertical");
 		ask_ = new QPushButton("Ask CTD Overlay", overlaysBox);
-		askRow->addWidget(template_, 1);
-		askRow->addWidget(askCanvas_);
+		overlaysLayout->addWidget(template_);
+		auto *askRow = new QHBoxLayout();
+		askRow->addWidget(askCanvas_, 1);
 		ctd::button(ask_);
 		askRow->addWidget(ask_);
 		overlaysLayout->addLayout(askRow);
@@ -317,9 +332,10 @@ public:
 		/* chat (H24) */
 		auto *chatBox = new QGroupBox("Chat", this);
 		auto *chatLayout = new QVBoxLayout(chatBox);
+		chatLayout->setSpacing(8);
 		chat_ = new QTextBrowser(chatBox);
 		chat_->setOpenExternalLinks(true);
-		chat_->setMinimumHeight(120);
+		chat_->setMinimumHeight(100);
 		chatLayout->addWidget(chat_);
 		ctd::eyebrowTitle(chatBox);
 		layout->addWidget(chatBox, 1);
@@ -550,22 +566,29 @@ private:
 		obs_data_t *session = obs_data_get_obj(s.status, "session");
 		/* the title in ink; LIVE in magenta (on air); TEST in cyan */
 		const QString state = str(session, "status");
-		QString text = QString("<b style='color:#f2fbff'>%1</b> · %2")
-				       .arg(str(session, "title").toHtmlEscaped(),
-					    state == "live" ? QString("<b style='color:#ff00b8'>● LIVE</b>")
-							    : state.toHtmlEscaped());
+		/* only the parts that are there, so an untitled session doesn't start with a stray separator */
+		QStringList parts;
+		const QString title = str(session, "title").trimmed();
+		if (!title.isEmpty())
+			parts << QString("<b style='color:#f2fbff'>%1</b>").arg(title.toHtmlEscaped());
+		if (state == "live")
+			parts << "<b style='color:#ff00b8'>● LIVE</b>";
+		else if (!state.isEmpty())
+			parts << state.toHtmlEscaped();
 		if (obs_data_get_bool(session, "testMode"))
-			text += " · <b style='color:#39e7ff'>TEST</b>";
+			parts << "<b style='color:#39e7ff'>TEST</b>";
 		/* API v1.3: every platform's viewers added up, kept current by stream.status; absent while unknown */
 		if (obs_data_has_user_value(session, "viewers"))
-			text += QString(" · <b>%1</b> watching").arg(obs_data_get_int(session, "viewers"));
+			parts << QString("<b>%1</b> watching").arg(obs_data_get_int(session, "viewers"));
 		obs_data_release(session);
+		QString text = parts.join(" · ");
 
 		/* per-feed bitrates, kept current by feed.status */
 		obs_data_array_t *feeds = obs_data_get_array(s.status, "feeds");
 		for (size_t i = 0; feeds && i < obs_data_array_count(feeds); i++) {
 			obs_data_t *f = obs_data_array_item(feeds, i);
-			text += QString("<br>%1: %2")
+			text += QString("%1%2: %3")
+					.arg(text.isEmpty() ? QString() : QString("<br>"))
 					.arg(str(f, "feed").toHtmlEscaped(),
 					     obs_data_get_bool(f, "online")
 						     ? QString("%1 kbps").arg(obs_data_get_int(f, "bitrateKbps"))
