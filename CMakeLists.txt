@@ -97,6 +97,15 @@ endif()
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
 
+# Show Profiles encoder fallback (ticket T15): pure C, no libobs, plus its tests. The tests are not part of "all"; build
+# the target, then run ctest:
+#   cmake --build --preset <preset> --target ctd-encoder-fallback-tests && ctest --test-dir <build dir> -C RelWithDebInfo
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/show/encoder-fallback.c)
+enable_testing()
+add_executable(ctd-encoder-fallback-tests EXCLUDE_FROM_ALL)
+target_sources(ctd-encoder-fallback-tests PRIVATE test/show/encoder-fallback-test.c src/show/encoder-fallback.c)
+add_test(NAME ctd-encoder-fallback-tests COMMAND ctd-encoder-fallback-tests)
+
 # ctd-live-probe (SPEC E5): the engine on the command line, for the test harness
 option(ENABLE_PROBE "Build the ctd-live-probe command-line tool" OFF)
 if(ENABLE_PROBE)
