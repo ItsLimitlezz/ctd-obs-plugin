@@ -76,10 +76,10 @@ static char *hex_encode(const char *text)
 	return hex;
 }
 
-enum http_status http_call_json(const struct http_call *call, obs_data_t **json)
+enum http_status http_call_text(const struct http_call *call, char **text)
 {
-	if (json)
-		*json = NULL;
+	if (text)
+		*text = NULL;
 
 	AVDictionary *options = NULL;
 	av_dict_set(&options, "method", call->method, 0);
@@ -127,12 +127,29 @@ enum http_status http_call_json(const struct http_call *call, obs_data_t **json)
 	}
 	avio_closep(&io);
 
-	if (status == HTTP_OK && json && reply.array && reply.len) {
-		*json = obs_data_create_from_json(reply.array);
+	if (status == HTTP_OK && text && reply.array && reply.len)
+		*text = bstrdup(reply.array);
+	if (reply.array)
+		memset(reply.array, 0, reply.len); /* a reply may hold a secret (ingest keys, show secrets) */
+	dstr_free(&reply);
+	return status;
+}
+
+enum http_status http_call_json(const struct http_call *call, obs_data_t **json)
+{
+	char *text = NULL;
+	if (json)
+		*json = NULL;
+	enum http_status status = http_call_text(call, json ? &text : NULL);
+	if (status == HTTP_OK && json && text) {
+		*json = obs_data_create_from_json(text);
 		if (!*json)
 			status = HTTP_BAD_RESPONSE;
 	}
-	dstr_free(&reply);
+	if (text) {
+		memset(text, 0, strlen(text));
+		bfree(text);
+	}
 	return status;
 }
 

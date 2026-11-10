@@ -42,6 +42,9 @@ struct http_call {
 
 /* One call. On HTTP_OK and when json is not NULL, *json is the reply parsed (release it), or NULL for an empty reply. */
 enum http_status http_call_json(const struct http_call *call, obs_data_t **json);
+/* The same, with the reply as text (bfree it; NULL when empty): for replies obs_data can't hold, such as arrays of
+ * strings (Show Profiles: POST /blobs/check). */
+enum http_status http_call_text(const struct http_call *call, char **text);
 
 /*
  * Opens a long-lived GET for Server-Sent Events. last_event_id (may be NULL) resumes the stream; idle_timeout_s is how

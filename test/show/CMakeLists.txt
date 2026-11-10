@@ -20,22 +20,25 @@ target_include_directories(ctd-show-tests PRIVATE "${_ctd_show_src}")
 file(GLOB CTD_SHOW_IDENTITY_FIXTURES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/identity-fixtures/*.json")
 add_test(NAME ctd-show-tests COMMAND ctd-show-tests ${CTD_SHOW_IDENTITY_FIXTURES})
 
-# T7, T9, T10: JSON model, manifest validation, scrubber, asset rewriter, INI filter, export, local store
+# T7, T9, T10, T11, M4: JSON model, manifest validation, scrubber, asset rewriter, INI filter, export, local store
 add_executable(ctd-show-unit ${_ctd_show_exclude})
 target_sources(
   ctd-show-unit
   PRIVATE
     unit-main.c
     assets-test.c
+    devices-test.c
     export-test.c
     ini-test.c
     json-test.c
     manifest-test.c
     scrub-test.c
     store-test.c
+    sync-test.c
     "${_ctd_show_src}/assets.c"
     "${_ctd_show_src}/bundle.c"
     "${_ctd_show_src}/devices-identity.c"
+    "${_ctd_show_src}/devices.c"
     "${_ctd_show_src}/export.c"
     "${_ctd_show_src}/ini.c"
     "${_ctd_show_src}/json.c"
@@ -44,6 +47,9 @@ target_sources(
     "${_ctd_show_src}/sha256.c"
     "${_ctd_show_src}/show-fs.c"
     "${_ctd_show_src}/store.c"
+    "${_ctd_show_src}/sync-core.c"
+    "${_ctd_show_src}/sync-flow.c"
+    "${_ctd_show_src}/tar.c"
 )
 target_include_directories(ctd-show-unit PRIVATE "${_ctd_show_src}")
 if(WIN32)

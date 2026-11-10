@@ -23,6 +23,12 @@ void show_set_active(const char *id); /* "" or NULL: none */
 void show_set_reentry(const char *id, int count);
 void show_reload_entries(void);                         /* re-reads the store (any thread) */
 bool show_run_worker(void *(*fn)(void *), void *param); /* one at a time; false if one is running */
+/* M3: UI thread. Marks busy and runs fn(param) on the worker (false, with the reason in the message, when Show
+ * Profiles is off or busy). fn must end with show_reload_entries() + show_set_busy(SHOW_IDLE). */
+bool show_begin_job(enum show_busy busy, void *(*fn)(void *), void *param);
+/* UI thread: waits for a worker that has finished its work (e.g. from a task the worker queued as its last step). */
+void show_join_worker(void);
+const char *show_active_id_copy(char out[37]); /* the active show profile ("" none) */
 
 /* hooks (show.c) */
 bool show_run_stage_hooks(struct show_stage_ctx *ctx, char *err, size_t err_size);

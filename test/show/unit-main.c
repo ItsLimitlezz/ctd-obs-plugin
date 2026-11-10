@@ -17,13 +17,16 @@ void test_store(void);
 void test_assets(void);
 void test_ini(void);
 void test_export(void);
+void test_devices(void);
+void test_sync(void);
 
 static const struct {
 	const char *name;
 	void (*fn)(void);
 } suites[] = {
-	{"json", test_json},     {"manifest", test_manifest}, {"scrub", test_scrub},   {"store", test_store},
-	{"assets", test_assets}, {"ini", test_ini},           {"export", test_export},
+	{"json", test_json},     {"manifest", test_manifest}, {"scrub", test_scrub},
+	{"store", test_store},   {"assets", test_assets},     {"ini", test_ini},
+	{"export", test_export}, {"devices", test_devices},   {"sync", test_sync},
 };
 
 void unit_fixture_path(const char *name, char *out, size_t size)
