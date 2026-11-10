@@ -73,6 +73,7 @@ set(
   src/show/assets.c
   src/show/bundle.c
   src/show/devices-identity.c
+  src/show/devices.c
   src/show/export.c
   src/show/ini.c
   src/show/json.c
@@ -81,9 +82,15 @@ set(
   src/show/sha256.c
   src/show/show-fs.c
   src/show/store.c
+  src/show/sync-core.c
+  src/show/sync-flow.c
+  src/show/tar.c
 )
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${CTD_SHOW_PURE_SOURCES} src/show/apply.c src/show/show.c)
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/show-section.cpp)
+target_sources(
+  ${CMAKE_PROJECT_NAME}
+  PRIVATE ${CTD_SHOW_PURE_SOURCES} src/show/apply.c src/show/device-map.c src/show/show.c src/show/sync.c
+)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/device-map-dialog.cpp src/ui/show-section.cpp)
 if(WIN32)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32 bcrypt)
 endif()
