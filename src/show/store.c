@@ -720,6 +720,11 @@ done:
 
 bool show_store_set_relay_revision(const char *id, int64_t seq, int64_t revision)
 {
+	return show_store_set_relay_link(id, seq, revision, NULL);
+}
+
+bool show_store_set_relay_link(const char *id, int64_t seq, int64_t revision, const char *relay_profile_id)
+{
 	char dir[PATH_MAX_LEN], path[PATH_MAX_LEN], sums_path[PATH_MAX_LEN], hex[65];
 	if (!show_store_revision_dir(id, seq, dir, sizeof(dir)) ||
 	    !sfs_join(path, sizeof(path), dir, SHOW_FILE_MANIFEST) ||
@@ -730,6 +735,8 @@ bool show_store_set_relay_revision(const char *id, int64_t seq, int64_t revision
 	bool ok = false;
 	if (manifest && sums) {
 		cj_set_int(manifest, "revision", revision);
+		if (relay_profile_id && *relay_profile_id)
+			cj_set_str(manifest, "relayProfileId", relay_profile_id);
 		char *text = cj_print(manifest, true);
 		if (text && sfs_write_atomic(path, text, strlen(text))) {
 			sha256_hex(text, strlen(text), hex);
@@ -746,6 +753,8 @@ bool show_store_set_relay_revision(const char *id, int64_t seq, int64_t revision
 	if (!meta)
 		return false;
 	cj_set_int(meta, "baseRevision", revision);
+	if (relay_profile_id && *relay_profile_id)
+		cj_set_str(meta, "relayProfileId", relay_profile_id);
 	if (cj_get_int(meta, "headSeq", 0) == seq)
 		cj_set_bool(meta, "dirty", false);
 	ok = show_store_write_meta(id, meta);
@@ -788,4 +797,32 @@ bool show_store_write_device_map(const char *id, const char *machine, const cj *
 		return false;
 	snprintf(name, sizeof(name), "device-map.%s.json", machine);
 	return profile_file(id, name, path, sizeof(path)) && cj_write_file(path, map, true);
+}
+
+static bool aliases_path(const char *machine, char *out, size_t size)
+{
+	char name[96];
+	if (!machine_ok(machine) || !store_root[0])
+		return false;
+	snprintf(name, sizeof(name), "device-aliases.%s.json", machine);
+	return path_join3(out, size, store_root, "show-profiles", name);
+}
+
+cj *show_store_device_aliases(const char *machine)
+{
+	char path[PATH_MAX_LEN];
+	if (!aliases_path(machine, path, sizeof(path)))
+		return NULL;
+	cj *aliases = cj_parse_file(path, NULL, 0);
+	if (aliases && !cj_is_object(aliases)) {
+		cj_free(aliases);
+		return NULL;
+	}
+	return aliases;
+}
+
+bool show_store_write_device_aliases(const char *machine, const cj *aliases)
+{
+	char path[PATH_MAX_LEN];
+	return cj_is_object(aliases) && aliases_path(machine, path, sizeof(path)) && cj_write_file(path, aliases, true);
 }

@@ -43,6 +43,7 @@ if (( ! (${skips[(Ie)all]} + ${skips[(Ie)deps]}) )) {
     libavcodec-dev${suffix} \
     libavformat-dev${suffix} \
     libavutil-dev${suffix} \
+    libcurl4-openssl-dev${suffix} \
     libswresample-dev${suffix} \
     libswscale-dev${suffix} \
     libgles2-mesa-dev \

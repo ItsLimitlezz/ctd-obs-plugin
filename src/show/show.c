@@ -9,6 +9,8 @@
 #include "sha256.h"
 #include "show-fs.h"
 #include "store.h"
+#include "device-map.h"
+#include "sync.h"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -544,6 +546,34 @@ static bool begin(enum show_busy busy)
 	return free_now;
 }
 
+bool show_begin_job(enum show_busy busy, void *(*fn)(void *), void *param)
+{
+	if (!begin(busy))
+		return false;
+	if (!show_run_worker(fn, param)) {
+		show_set_message(true, "Busy: wait for the current Show Profiles action to finish.");
+		show_set_busy(SHOW_IDLE);
+		return false;
+	}
+	return true;
+}
+
+void show_join_worker(void)
+{
+	if (sp.worker_running) {
+		pthread_join(sp.worker, NULL);
+		sp.worker_running = false;
+	}
+}
+
+const char *show_active_id_copy(char out[37])
+{
+	lock();
+	snprintf(out, 37, "%s", sp.active_id);
+	unlock();
+	return out;
+}
+
 static bool start_save(const char *id, const char *name, bool create)
 {
 	if (!begin(SHOW_SAVING))
@@ -728,6 +758,8 @@ void show_init(void)
 	show_reload_entries();
 	obs_frontend_add_event_callback(event_cb, NULL);
 	obs_frontend_add_save_callback(save_cb, NULL);
+	show_devices_init(); /* M4: stage + applied hooks */
+	show_sync_init();    /* M3: Relay sync */
 	sp.initialized = true;
 }
 
@@ -735,6 +767,7 @@ void show_shutdown(void)
 {
 	if (!sp.initialized)
 		return;
+	show_sync_shutdown(); /* stops transfers, so a running job ends quickly */
 	obs_frontend_remove_save_callback(save_cb, NULL);
 	obs_frontend_remove_event_callback(event_cb, NULL);
 	if (sp.worker_running) {
@@ -742,6 +775,7 @@ void show_shutdown(void)
 		sp.worker_running = false;
 	}
 	show_apply_shutdown();
+	show_devices_shutdown();
 	show_store_close();
 	lock();
 	bfree(sp.message);

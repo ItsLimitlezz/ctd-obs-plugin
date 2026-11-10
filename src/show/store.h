@@ -64,6 +64,9 @@ cj *show_store_revisions(const char *id);
 /* M3: records Relay's revision number for a local revision once it is saved up (and clears dirty if it is the
  * head). */
 bool show_store_set_relay_revision(const char *id, int64_t seq, int64_t revision);
+/* M3: the same, and links the profile to a Relay profile (manifest + meta relayProfileId) on its first save-up, so the
+ * next local save (export copies relayProfileId from the head) stays linked. relay_profile_id NULL/"": unchanged. */
+bool show_store_set_relay_link(const char *id, int64_t seq, int64_t revision, const char *relay_profile_id);
 /* The folder of a revision (for M3's tar of the bundle). */
 bool show_store_revision_dir(const char *id, int64_t seq, char *out, size_t size);
 /* sha256 over the bundle's checksums.json: equal for two saves with identical content (meta.lastSavedHash). */
@@ -80,6 +83,10 @@ bool show_store_has_asset(const char *sha256, const char *name, int64_t size);
 /* M4: this machine's device map for a profile (an object, NULL when none) and saving it. machine is a file-safe name. */
 cj *show_store_device_map(const char *id, const char *machine);
 bool show_store_write_device_map(const char *id, const char *machine, const cj *map);
+/* M4: this machine's alias table, shared by every profile (<root>/show-profiles/device-aliases.<machine>.json): a
+ * captured device identity -> the local device the user picked for it (devices.h). NULL when none. */
+cj *show_store_device_aliases(const char *machine);
+bool show_store_write_device_aliases(const char *machine, const cj *aliases);
 
 #ifdef __cplusplus
 }

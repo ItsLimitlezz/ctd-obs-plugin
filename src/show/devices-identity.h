@@ -28,6 +28,11 @@ typedef struct devices_identity {
  * empty fields. */
 bool devices_identity(const char *source_type, devices_identity_get_fn get, void *ctx, devices_identity_t *out);
 
+/* The settings keys of a source type's device: id_key (the device id, e.g. "video_device_id") and name_key (the display
+ * name, or NULL when the type stores none). Returns false for a type that is not in the table. Used by the M4 mapper to
+ * write a chosen device into a source's settings and to read a candidate's identity. */
+bool devices_identity_keys(const char *source_type, const char **id_key, const char **name_key);
+
 /* Class ("video", "audio", "display", "window") of a source type, or NULL when it is not in the table. */
 const char *devices_identity_class(const char *source_type);
 

@@ -7,10 +7,15 @@
 #include <QGroupBox>
 #include <QString>
 
+#include <QHash>
+
 #include <cstdint>
+
+#include "../show/sync.h"
 
 class QLabel;
 class QListWidget;
+class QProgressBar;
 class QPushButton;
 
 class ShowProfilesSection : public QGroupBox {
@@ -28,6 +33,14 @@ private:
 	void askSwitch();
 	void askDelete();
 	QString selectedName() const;
+	/* M3 (T11): CTD Relay sync */
+	void askSaveUp();
+	void askPull();
+	void askUpdateNow();
+	void openDevices();
+	void askConflict();
+	void showProgress(const show_sync_state &sync);
+	void showRemotes(const show_sync_state &sync);
 
 	QLabel *status_;
 	QListWidget *list_;
@@ -35,7 +48,20 @@ private:
 	QPushButton *save_;
 	QPushButton *update_;
 	QPushButton *delete_;
+	QPushButton *saveUp_;
+	QPushButton *updateNow_;
+	QPushButton *devices_;
+	QProgressBar *progress_;
+	QLabel *remoteTitle_;
+	QListWidget *remote_;
+	QPushButton *pull_;
 	uint64_t lastSeq_ = UINT64_MAX;
+	uint64_t lastSyncSeq_ = UINT64_MAX;
+	uint64_t lastConflictSeq_ = 0;
+	bool conflictOpen_ = false;
+	QHash<QString, show_sync_entry> sync_; /* by show profile id */
+	bool relayConnected_ = false;
+	QString relayProfileName_;
 	/* what the buttons depend on, from the last refresh */
 	int busy_ = 0;
 	bool live_ = false;
