@@ -60,6 +60,8 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       src/show/export.c
       src/show/ini.c
       src/show/json.c
+      src/show/library-mirror.c
+      src/show/library-plan.c
       src/show/manifest.c
       src/show/scrub.c
       src/show/sha256.c
@@ -197,6 +199,14 @@ if(WIN32)
 endif()
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
+
+# Show Profiles library mirror (ticket T14): LUTs from the profile's CTD Relay library, cached in the plugin's config
+# folder and in the show-profile asset cache. library-plan.c is pure C (no libobs) and has its own tests:
+#   cmake --build --preset <preset> --target ctd-library-tests && ctest --test-dir <build dir> -C RelWithDebInfo
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/show/library-mirror.c src/show/library-plan.c)
+add_executable(ctd-library-tests EXCLUDE_FROM_ALL)
+target_sources(ctd-library-tests PRIVATE test/show/library-test.c src/show/library-plan.c)
+add_test(NAME ctd-library-tests COMMAND ctd-library-tests)
 
 # ctd-live-probe (SPEC E5): the engine on the command line, for the test harness
 option(ENABLE_PROBE "Build the ctd-live-probe command-line tool" OFF)
