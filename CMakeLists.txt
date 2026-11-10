@@ -5,6 +5,8 @@ cmake_minimum_required(VERSION 3.28...3.30)
 if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
   find_package(Qt6 REQUIRED Core Widgets)
   find_package(FFmpeg REQUIRED COMPONENTS avcodec avformat avutil swresample swscale)
+  # Show Profiles file transfers (S2): the libcurl OBS itself builds against
+  find_package(CURL REQUIRED)
 
   add_library(ctd-engine STATIC)
   target_sources(
@@ -52,7 +54,9 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       src/show/apply.c
       src/show/assets.c
       src/show/bundle.c
+      src/show/device-map.c
       src/show/devices-identity.c
+      src/show/devices.c
       src/show/export.c
       src/show/ini.c
       src/show/json.c
@@ -62,6 +66,11 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       src/show/show-fs.c
       src/show/show.c
       src/show/store.c
+      src/show/sync-core.c
+      src/show/sync-flow.c
+      src/show/sync.c
+      src/show/tar.c
+      src/ui/device-map-dialog.cpp
       src/ui/hub-dock.cpp
       src/ui/multistream-dock.cpp
       src/ui/servers-dialog.cpp
@@ -72,6 +81,7 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
     ctd-live-source
     PRIVATE
       ctd-engine
+      CURL::libcurl
       FFmpeg::avcodec
       FFmpeg::avformat
       FFmpeg::avutil
@@ -114,6 +124,11 @@ find_package(FFmpeg REQUIRED COMPONENTS avcodec avformat avutil)
 find_package(FFmpeg REQUIRED COMPONENTS swresample swscale)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE FFmpeg::avcodec FFmpeg::avformat FFmpeg::avutil)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE FFmpeg::swresample FFmpeg::swscale)
+
+# libcurl for streaming file transfers to and from CTD Relay (Show Profiles, docs/show-profiles-s2.md). Also the copy OBS
+# runs with: obs-deps' libcurl.dll (Schannel) on Windows, the SDK's on macOS, the system's on Linux. Nothing is bundled.
+find_package(CURL REQUIRED)
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE CURL::libcurl)
 
 if(ENABLE_FRONTEND_API)
   find_package(obs-frontend-api REQUIRED)
@@ -159,6 +174,7 @@ set(
   src/show/assets.c
   src/show/bundle.c
   src/show/devices-identity.c
+  src/show/devices.c
   src/show/export.c
   src/show/ini.c
   src/show/json.c
@@ -167,9 +183,15 @@ set(
   src/show/sha256.c
   src/show/show-fs.c
   src/show/store.c
+  src/show/sync-core.c
+  src/show/sync-flow.c
+  src/show/tar.c
 )
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${CTD_SHOW_PURE_SOURCES} src/show/apply.c src/show/show.c)
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/show-section.cpp)
+target_sources(
+  ${CMAKE_PROJECT_NAME}
+  PRIVATE ${CTD_SHOW_PURE_SOURCES} src/show/apply.c src/show/device-map.c src/show/show.c src/show/sync.c
+)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/device-map-dialog.cpp src/ui/show-section.cpp)
 if(WIN32)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32 bcrypt)
 endif()

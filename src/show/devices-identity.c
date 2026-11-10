@@ -49,6 +49,16 @@ static const row_t *find_row(const char *type)
 	return NULL;
 }
 
+bool devices_identity_keys(const char *source_type, const char **id_key, const char **name_key)
+{
+	const row_t *row = find_row(source_type);
+	if (id_key)
+		*id_key = row ? row->id_key : NULL;
+	if (name_key)
+		*name_key = row ? row->name_key : NULL;
+	return row != NULL;
+}
+
 static void copy_str(char *dst, size_t cap, const char *src, size_t len)
 {
 	if (len >= cap)

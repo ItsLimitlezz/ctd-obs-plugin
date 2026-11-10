@@ -45,6 +45,8 @@ enum show_busy {
 	SHOW_SAVING,    /* save as / update: exporting the current setup */
 	SHOW_SWITCHING, /* stage -> swap -> verify (-> rollback) */
 	SHOW_DELETING,
+	SHOW_UPLOADING, /* M3: saving up to CTD Relay (sync.h) */
+	SHOW_PULLING,   /* M3: downloading from CTD Relay, or answering a conflict */
 };
 
 struct show_entry {

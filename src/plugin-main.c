@@ -6,6 +6,8 @@
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include <curl/curl.h>
+
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("obs-ctd-live-source", "en-US")
 
@@ -33,6 +35,8 @@ MODULE_EXPORT const char *obs_module_description(void)
 
 bool obs_module_load(void)
 {
+	/* file downloads (http_get_file) use libcurl; the call is counted, OBS makes its own */
+	curl_global_init(CURL_GLOBAL_DEFAULT);
 	servers_init(); /* before any source is created */
 	obs_register_source(&ctd_live_source_info);
 	obs_register_source(&ctd_live_audio_source_info);
@@ -65,4 +69,5 @@ void obs_module_unload(void)
 	ms_shutdown();
 	mtx_pollers_shutdown(); /* the sources are gone by now; anything else still holding one */
 	servers_shutdown();
+	curl_global_cleanup();
 }
