@@ -33,7 +33,8 @@
 #define CHAT_KEEP 200
 #define ALERTS_KEEP 30
 #define EVENTS_IDLE_TIMEOUT_S 45 /* the server pings every 15 s */
-#define EVENT_TYPES "chat.*,destination.*,feed.status,stream.status,profile.*,profiles.changed,app.*,system.*"
+#define EVENT_TYPES \
+	"chat.*,destination.*,feed.status,stream.status,profile.*,profiles.changed,app.*,system.*,show.changed"
 /* the shared clock: a burst of samples a second apart, the lowest-delay one wins; a fresh burst every few minutes */
 #define CLOCK_SAMPLES 8
 #define CLOCK_BURST 6
@@ -474,10 +475,12 @@ static void start_pairing(const char *base)
 
 	/* obs_data can't hold an array of strings, so the body is written by hand (the machine name is [a-z0-9-]) */
 	struct dstr json = {0};
-	dstr_printf(&json,
-		    "{\"appName\":\"CTD OBS plugin (%s)\",\"kind\":\"ctd-obs-plugin\",\"scopes\":[\"status:read\","
-		    "\"chat:read\",\"ingest:read\",\"apps:read\",\"apps:write\",\"obs:write\"],\"profileId\":null}",
-		    *machine ? machine : "this PC");
+	dstr_printf(
+		&json,
+		"{\"appName\":\"CTD OBS plugin (%s)\",\"kind\":\"ctd-obs-plugin\",\"scopes\":[\"status:read\","
+		"\"chat:read\",\"ingest:read\",\"apps:read\",\"apps:write\",\"obs:write\",\"show:read\",\"show:write\","
+		"\"show:secrets\"],\"profileId\":null}",
+		*machine ? machine : "this PC");
 	struct dstr url = {0};
 	dstr_printf(&url, "%s/pairing", base);
 	obs_data_t *reply = NULL;
@@ -1413,6 +1416,10 @@ static void handle_event(const char *type, obs_data_t *envelope)
 		update_profile(data);
 	} else if (strcmp(type, "profiles.changed") == 0) {
 		ms.profiles_dirty = true;
+	} else if (strcmp(type, "show.changed") == 0) {
+		/* Show Profiles (API v1.9): a revision was saved; GET /profiles carries every profile's show head, which the
+		 * sync client (src/show/sync.c) compares with this machine's copies */
+		ms.profiles_dirty = true;
 	} else if (strcmp(type, "apps.changed") == 0) {
 		ms.overlays_dirty = true;
 	} else if (strcmp(type, "app.message") == 0) {
@@ -1852,6 +1859,28 @@ void ms_snapshot_get(struct ms_snapshot *out)
 	out->obs_websocket_message = bstrdup(ms.obsws_message ? ms.obsws_message : "");
 	out->seq = ms.seq;
 	pthread_mutex_unlock(&ms.mutex);
+}
+
+bool ms_show_access(char **api_base_out, char **token_out, char **profile_out)
+{
+	*api_base_out = *token_out = *profile_out = NULL;
+	if (!os_atomic_load_bool(&ms.alive))
+		return false;
+	pthread_mutex_lock(&ms.mutex);
+	const bool ok = ms.link == MS_CONNECTED && ms.token && !ms.token_refused && ms.server;
+	if (ok) {
+		*api_base_out = api_base(ms.server);
+		*token_out = bstrdup(ms.token);
+		*profile_out = safe_id(ms.profile_id) ? bstrdup(ms.profile_id) : NULL;
+	}
+	pthread_mutex_unlock(&ms.mutex);
+	if (ok && !*api_base_out) {
+		bfree(*token_out);
+		bfree(*profile_out);
+		*token_out = *profile_out = NULL;
+		return false;
+	}
+	return ok;
 }
 
 void ms_snapshot_free(struct ms_snapshot *snapshot)

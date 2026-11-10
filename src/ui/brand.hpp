@@ -21,6 +21,7 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QStyle>
 #include <QPainterPath>
 #include <QPushButton>
 #include <QScrollArea>

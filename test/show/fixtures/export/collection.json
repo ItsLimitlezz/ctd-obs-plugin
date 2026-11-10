@@ -1,0 +1,255 @@
+{
+    "current_scene": "Main",
+    "current_program_scene": "Main",
+    "scene_order": [
+        {
+            "name": "Main"
+        }
+    ],
+    "name": "DPRTMNT",
+    "sources": [
+        {
+            "prev_ver": 536870914,
+            "name": "Main",
+            "uuid": "11111111-0000-4000-8000-000000000001",
+            "id": "scene",
+            "versioned_id": "scene",
+            "settings": {
+                "id_counter": 4,
+                "custom_size": false,
+                "items": [
+                    {
+                        "name": "Logo",
+                        "source_uuid": "11111111-0000-4000-8000-000000000002",
+                        "visible": true,
+                        "locked": false,
+                        "pos": {"x": 40.0, "y": 40.0},
+                        "scale": {"x": 1.0, "y": 1.0},
+                        "id": 1
+                    },
+                    {
+                        "name": "Camera",
+                        "source_uuid": "11111111-0000-4000-8000-000000000005",
+                        "visible": true,
+                        "locked": false,
+                        "pos": {"x": 0.0, "y": 0.0},
+                        "scale": {"x": 0.5, "y": 0.5},
+                        "id": 2
+                    },
+                    {
+                        "name": "Chat",
+                        "source_uuid": "11111111-0000-4000-8000-000000000007",
+                        "visible": true,
+                        "locked": false,
+                        "pos": {"x": 1400.0, "y": 300.0},
+                        "scale": {"x": 1.0, "y": 1.0},
+                        "id": 3
+                    }
+                ]
+            },
+            "mixers": 0,
+            "enabled": true,
+            "muted": false,
+            "volume": 1.0,
+            "hotkeys": {},
+            "filters": []
+        },
+        {
+            "name": "Logo",
+            "uuid": "11111111-0000-4000-8000-000000000002",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "@ASSETS@/logo.png",
+                "unload": false
+            },
+            "enabled": true,
+            "filters": []
+        },
+        {
+            "name": "Logo (second use)",
+            "uuid": "11111111-0000-4000-8000-000000000003",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "@ASSETS@/logo.png"
+            },
+            "enabled": true,
+            "filters": []
+        },
+        {
+            "name": "Intro",
+            "uuid": "11111111-0000-4000-8000-000000000004",
+            "id": "ffmpeg_source",
+            "versioned_id": "ffmpeg_source",
+            "settings": {
+                "is_local_file": true,
+                "local_file": "@ASSETS@/intro.mp4",
+                "looping": false,
+                "close_when_inactive": true
+            },
+            "enabled": true,
+            "filters": []
+        },
+        {
+            "name": "Camera",
+            "uuid": "11111111-0000-4000-8000-000000000005",
+            "id": "dshow_input",
+            "versioned_id": "dshow_input",
+            "settings": {
+                "video_device_id": "Cam Link 4K:\\\\?\\usb#vid_0fd9&pid_0066&mi_00#6&1a2b&0&0000#{65e8773d-8f56-11d0-a3b9-00a0c9223196}",
+                "resolution": "1920x1080",
+                "last_video_device_id": "Cam Link 4K:\\\\?\\usb#vid_0fd9&pid_0066&mi_00#6&1a2b&0&0000#{65e8773d-8f56-11d0-a3b9-00a0c9223196}"
+            },
+            "enabled": true,
+            "filters": [
+                {
+                    "name": "Warm LUT",
+                    "uuid": "11111111-0000-4000-8000-0000000000a1",
+                    "id": "clut_filter",
+                    "versioned_id": "clut_filter",
+                    "settings": {
+                        "image_path": "@ASSETS@/warm.cube",
+                        "clut_amount": 0.8
+                    },
+                    "enabled": true
+                },
+                {
+                    "name": "Color Correction",
+                    "uuid": "11111111-0000-4000-8000-0000000000a2",
+                    "id": "color_filter_v2",
+                    "versioned_id": "color_filter_v2",
+                    "settings": {
+                        "gamma": 0.1
+                    },
+                    "enabled": true
+                }
+            ]
+        },
+        {
+            "name": "Lower third",
+            "uuid": "11111111-0000-4000-8000-000000000006",
+            "id": "browser_source",
+            "versioned_id": "browser_source",
+            "settings": {
+                "is_local_file": true,
+                "local_file": "@ASSETS@/lowerthird.html",
+                "url": "",
+                "width": 1920,
+                "height": 1080
+            },
+            "enabled": true,
+            "filters": []
+        },
+        {
+            "name": "Chat",
+            "uuid": "11111111-0000-4000-8000-000000000007",
+            "id": "browser_source",
+            "versioned_id": "browser_source",
+            "settings": {
+                "url": "https://overlay.example/o/chat?key=FIXTURE-OVERLAY-KEY-1234",
+                "width": 600,
+                "height": 800
+            },
+            "private_settings": {
+                "ctd_overlay_slot": "chat-box",
+                "ctd_overlay_canvas": "landscape"
+            },
+            "enabled": true,
+            "filters": []
+        },
+        {
+            "name": "Playlist",
+            "uuid": "11111111-0000-4000-8000-000000000008",
+            "id": "vlc_source",
+            "versioned_id": "vlc_source",
+            "settings": {
+                "loop": true,
+                "shuffle": false,
+                "playlist": [
+                    {"value": "@ASSETS@/music/track1.mp3", "selected": false, "hidden": false},
+                    {"value": "@ASSETS@/music/track2.mp3", "selected": false, "hidden": false}
+                ]
+            },
+            "enabled": true,
+            "filters": []
+        },
+        {
+            "name": "Old photo",
+            "uuid": "11111111-0000-4000-8000-000000000009",
+            "id": "image_source",
+            "versioned_id": "image_source",
+            "settings": {
+                "file": "@ASSETS@/gone.png"
+            },
+            "enabled": true,
+            "filters": []
+        },
+        {
+            "name": "Site",
+            "uuid": "11111111-0000-4000-8000-00000000000a",
+            "id": "browser_source",
+            "versioned_id": "browser_source",
+            "settings": {
+                "url": "https://example.com/page",
+                "css": "body { background-color: rgba(0, 0, 0, 0); }"
+            },
+            "enabled": true,
+            "filters": []
+        },
+        {
+            "name": "Mic",
+            "uuid": "11111111-0000-4000-8000-00000000000b",
+            "id": "wasapi_input_capture",
+            "versioned_id": "wasapi_input_capture",
+            "settings": {
+                "device_id": "{0.0.1.00000000}.{11111111-2222-4333-8444-555555555555}"
+            },
+            "enabled": true,
+            "filters": []
+        }
+    ],
+    "groups": [],
+    "transitions": [
+        {
+            "name": "Stinger",
+            "uuid": "11111111-0000-4000-8000-0000000000b1",
+            "id": "obs_stinger_transition",
+            "versioned_id": "obs_stinger_transition",
+            "settings": {
+                "path": "@ASSETS@/stinger.mov",
+                "transition_point": 500
+            },
+            "filters": []
+        }
+    ],
+    "DesktopAudioDevice1": {
+        "prev_ver": 536870914,
+        "name": "Desktop Audio",
+        "uuid": "11111111-0000-4000-8000-0000000000c1",
+        "id": "wasapi_output_capture",
+        "versioned_id": "wasapi_output_capture",
+        "settings": {
+            "device_id": "default"
+        },
+        "enabled": true,
+        "volume": 1.0,
+        "filters": []
+    },
+    "AuxAudioDevice1": {
+        "prev_ver": 536870914,
+        "name": "Mic/Aux",
+        "uuid": "11111111-0000-4000-8000-0000000000c2",
+        "id": "wasapi_input_capture",
+        "versioned_id": "wasapi_input_capture",
+        "settings": {
+            "device_id": "{0.0.1.00000000}.{66666666-7777-4888-8999-aaaaaaaaaaaa}"
+        },
+        "enabled": true,
+        "volume": 1.0,
+        "filters": []
+    },
+    "quick_transitions": [],
+    "transition_duration": 300,
+    "modules": {}
+}

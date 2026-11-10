@@ -6,6 +6,8 @@
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include <curl/curl.h>
+
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("obs-ctd-live-source", "en-US")
 
@@ -17,6 +19,7 @@ OBS_MODULE_USE_DEFAULT_LOCALE("obs-ctd-live-source", "en-US")
 #include "obs/issues.h"
 #include "obs/sync-groups.h"
 #include "obs/webhook.h"
+#include "show/show.h"
 
 extern struct obs_source_info ctd_live_source_info;
 extern struct obs_source_info ctd_live_audio_source_info;
@@ -32,6 +35,8 @@ MODULE_EXPORT const char *obs_module_description(void)
 
 bool obs_module_load(void)
 {
+	/* file downloads (http_get_file) use libcurl; the call is counted, OBS makes its own */
+	curl_global_init(CURL_GLOBAL_DEFAULT);
 	servers_init(); /* before any source is created */
 	obs_register_source(&ctd_live_source_info);
 	obs_register_source(&ctd_live_audio_source_info);
@@ -40,6 +45,7 @@ bool obs_module_load(void)
 	ctd_multistream_dock_register();
 	ctd_servers_dialog_register();
 	ctd_hub_dock_register();
+	show_init(); /* Show Profiles: turns itself on once OBS has loaded, only inside CTD OBS */
 	blog(LOG_INFO, "[ctd-live] plugin loaded (version %s)", PLUGIN_VERSION);
 	return true;
 }
@@ -55,6 +61,7 @@ void obs_module_post_load(void)
 
 void obs_module_unload(void)
 {
+	show_shutdown(); /* waits for a running save or switch step */
 	sync_groups_stop();
 	issues_stop();
 	obs_watch_stop();
@@ -62,4 +69,5 @@ void obs_module_unload(void)
 	ms_shutdown();
 	mtx_pollers_shutdown(); /* the sources are gone by now; anything else still holding one */
 	servers_shutdown();
+	curl_global_cleanup();
 }
