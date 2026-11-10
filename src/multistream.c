@@ -5,6 +5,7 @@
 #include "multistream.h"
 #include "http-client.h"
 #include "obsws-config.h"
+#include "show/library-mirror.h"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -34,7 +35,7 @@
 #define ALERTS_KEEP 30
 #define EVENTS_IDLE_TIMEOUT_S 45 /* the server pings every 15 s */
 #define EVENT_TYPES \
-	"chat.*,destination.*,feed.status,stream.status,profile.*,profiles.changed,app.*,system.*,show.changed"
+	"chat.*,destination.*,feed.status,stream.status,profile.*,profiles.changed,app.*,system.*,show.changed,library.changed"
 /* the shared clock: a burst of samples a second apart, the lowest-delay one wins; a fresh burst every few minutes */
 #define CLOCK_SAMPLES 8
 #define CLOCK_BURST 6
@@ -100,6 +101,7 @@ static struct {
 	bool resync_needed;  /* system.reset, or a stream that couldn't resume: refetch status and chat */
 	bool profiles_dirty; /* profiles.changed */
 	bool overlays_dirty; /* apps.changed, or CTD Overlay made one */
+	bool library_dirty;  /* library.changed: the asset library on CTD Relay changed (T14) */
 
 	/* overlay.create (H22) */
 	enum ms_overlay_request overlay_request;
@@ -1420,6 +1422,8 @@ static void handle_event(const char *type, obs_data_t *envelope)
 		/* Show Profiles (API v1.9): a revision was saved; GET /profiles carries every profile's show head, which the
 		 * sync client (src/show/sync.c) compares with this machine's copies */
 		ms.profiles_dirty = true;
+	} else if (strcmp(type, "library.changed") == 0) {
+		ms.library_dirty = true;
 	} else if (strcmp(type, "apps.changed") == 0) {
 		ms.overlays_dirty = true;
 	} else if (strcmp(type, "app.message") == 0) {
@@ -1590,6 +1594,7 @@ static void *ms_thread(void *unused)
 	bool registered = false; /* this connection's latest registration (heartbeat) went through */
 	bool events_backing_off = false;
 	int clock_burst_left = 0;
+	char *library_key = NULL; /* "<api base>|<profile>" the library mirror was last asked for (T14) */
 
 	while (!os_atomic_load_bool(&ms.stopping)) {
 		os_event_timedwait(ms.wake, 500);
@@ -1612,6 +1617,7 @@ static void *ms_thread(void *unused)
 		const bool resync = ms.resync_needed;
 		const bool profiles_dirty = ms.profiles_dirty;
 		const bool overlays_dirty = ms.overlays_dirty;
+		const bool library_dirty = ms.library_dirty;
 		const bool ingest = ms.ingest_requested;
 		const bool clock_dirty = ms.clock_dirty;
 		const bool clock_reset = ms.clock_reset;
@@ -1620,6 +1626,7 @@ static void *ms_thread(void *unused)
 		ms.clock_dirty = ms.clock_reset = false;
 		ms.refresh_requested = ms.reset_requested = ms.resync_needed = false;
 		ms.profiles_dirty = ms.overlays_dirty = ms.ingest_requested = ms.overlay_send = false;
+		ms.library_dirty = false;
 		if (ms.overlay_request == MS_OVERLAY_WAITING && os_gettime_ns() > ms.overlay_deadline_ns)
 			set_overlay_request(MS_OVERLAY_FAILED, "CTD Overlay didn't answer");
 		pthread_mutex_unlock(&ms.mutex);
@@ -1659,6 +1666,17 @@ static void *ms_thread(void *unused)
 				}
 				if (ingest)
 					fetch_ingest(base, token, profile);
+				/* T14: on pairing, on choosing the profile (both set refresh) and on library.changed. The mirror
+				 * works on its own thread; this only hands it the request. */
+				struct dstr key = {0};
+				/* a profile picked for us counts as chosen */
+				dstr_printf(&key, "%s|%s", base, profile);
+				if (refresh || library_dirty || !library_key || strcmp(library_key, key.array) != 0) {
+					library_mirror_request(base, token, profile);
+					bfree(library_key);
+					library_key = bstrdup(key.array);
+				}
+				dstr_free(&key);
 				if (overlay_send)
 					send_overlay_request(base, token, profile, overlay_template, overlay_canvas);
 				if (now >= next_clock_burst) {
@@ -1754,6 +1772,7 @@ static void *ms_thread(void *unused)
 		bfree(overlay_template);
 		bfree(overlay_canvas);
 	}
+	bfree(library_key);
 	return NULL;
 }
 
@@ -1769,6 +1788,7 @@ void ms_init(void)
 	set_string(&ms.message, ms.token ? "Connecting…" : "Not connected");
 	ms.refresh_requested = true;
 	ms.events_boot_ms = epoch_ms();
+	library_mirror_init();
 	if (pthread_create(&ms.thread, NULL, ms_thread, NULL) == 0)
 		ms.thread_running = true;
 	if (pthread_create(&ms.events_thread, NULL, ms_events_thread, NULL) == 0)
@@ -1788,6 +1808,7 @@ void ms_shutdown(void)
 		pthread_join(ms.events_thread, NULL);
 		ms.events_thread_running = false;
 	}
+	library_mirror_shutdown();
 	os_event_destroy(ms.wake);
 	pthread_mutex_destroy(&ms.mutex);
 	clear_pairing();
