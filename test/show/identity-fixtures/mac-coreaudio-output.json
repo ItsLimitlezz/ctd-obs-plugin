@@ -1,0 +1,1 @@
+{ "sourceType": "coreaudio_output_capture", "settings": { "device_id": "default" }, "expect": { "class": "audio", "id": "default" } }

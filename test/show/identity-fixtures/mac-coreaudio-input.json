@@ -1,0 +1,5 @@
+{
+  "sourceType": "coreaudio_input_capture",
+  "settings": { "device_id": "BuiltInMicrophoneDevice" },
+  "expect": { "class": "audio", "id": "BuiltInMicrophoneDevice", "name": "" }
+}

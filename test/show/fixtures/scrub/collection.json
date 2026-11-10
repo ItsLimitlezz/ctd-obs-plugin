@@ -1,0 +1,85 @@
+{
+    "name": "Fixture show",
+    "current_scene": "Main",
+    "modules": {
+        "example-plugin": {
+            "api_token": "FIXTURE-SECRET-MODULE-TOKEN-0001"
+        }
+    },
+    "sources": [
+        {
+            "id": "scene",
+            "versioned_id": "scene",
+            "name": "Main",
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "settings": {
+                "items": [
+                    {"name": "Chat", "source_uuid": "22222222-2222-4222-8222-222222222222", "id": 1}
+                ]
+            },
+            "hotkeys": {
+                "OBSBasic.SelectScene": [
+                    {"key": "OBS_KEY_F1"}
+                ]
+            }
+        },
+        {
+            "id": "browser_source",
+            "versioned_id": "browser_source",
+            "name": "Chat",
+            "uuid": "22222222-2222-4222-8222-222222222222",
+            "settings": {
+                "url": "https://overlay.example.invalid/o/chat?key=FIXTURE-OVERLAY-KEY-0002&theme=dark",
+                "width": 1920,
+                "height": 1080
+            },
+            "private_settings": {
+                "ctd_overlay_slot": "chat-box",
+                "ctd_overlay_canvas": "landscape"
+            }
+        },
+        {
+            "id": "browser_source",
+            "versioned_id": "browser_source",
+            "name": "Alerts",
+            "uuid": "33333333-3333-4333-8333-333333333333",
+            "settings": {
+                "url": "https://alerts.example.invalid/widget/alertbox?token=FIXTURE-ALERT-TOKEN-0003#access_token=FIXTURE-FRAGMENT-0004",
+                "css": "body { background-color: rgba(0, 0, 0, 0); }"
+            },
+            "filters": [
+                {
+                    "id": "example_filter",
+                    "name": "Remote",
+                    "uuid": "44444444-4444-4444-8444-444444444444",
+                    "settings": {
+                        "password": "FIXTURE-FILTER-PASSWORD-0005",
+                        "keyint": "2",
+                        "color_key": "green"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "ffmpeg_source",
+            "versioned_id": "ffmpeg_source",
+            "name": "Pull",
+            "uuid": "55555555-5555-4555-8555-555555555555",
+            "settings": {
+                "input": "rtmp://user:FIXTURE-URL-PASSWORD-0006@ingest.example.invalid/app/live_123456789_FIXTUREabcdefghijklmnop",
+                "is_local_file": false,
+                "note": "sk_live_FIXTUREVALUE00000007"
+            }
+        },
+        {
+            "id": "color_source",
+            "versioned_id": "color_source_v3",
+            "name": "Plain",
+            "uuid": "66666666-6666-4666-8666-666666666666",
+            "settings": {
+                "color": 4278190335,
+                "label": "this is a long but harmless sentence"
+            }
+        }
+    ]
+}

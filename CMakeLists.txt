@@ -5,6 +5,8 @@ cmake_minimum_required(VERSION 3.28...3.30)
 if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
   find_package(Qt6 REQUIRED Core Widgets)
   find_package(FFmpeg REQUIRED COMPONENTS avcodec avformat avutil swresample swscale)
+  # Show Profiles file transfers (S2): the libcurl OBS itself builds against
+  find_package(CURL REQUIRED)
 
   add_library(ctd-engine STATIC)
   target_sources(
@@ -49,15 +51,37 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       src/obs/ws-vendor.c
       src/obsws-config.c
       src/plugin-main.c
+      src/show/apply.c
+      src/show/assets.c
+      src/show/bundle.c
+      src/show/device-map.c
+      src/show/devices-identity.c
+      src/show/devices.c
+      src/show/export.c
+      src/show/ini.c
+      src/show/json.c
+      src/show/manifest.c
+      src/show/scrub.c
+      src/show/sha256.c
+      src/show/show-fs.c
+      src/show/show.c
+      src/show/store.c
+      src/show/sync-core.c
+      src/show/sync-flow.c
+      src/show/sync.c
+      src/show/tar.c
+      src/ui/device-map-dialog.cpp
       src/ui/hub-dock.cpp
       src/ui/multistream-dock.cpp
       src/ui/servers-dialog.cpp
+      src/ui/show-section.cpp
   )
   target_include_directories(ctd-live-source PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
   target_link_libraries(
     ctd-live-source
     PRIVATE
       ctd-engine
+      CURL::libcurl
       FFmpeg::avcodec
       FFmpeg::avformat
       FFmpeg::avutil
@@ -68,6 +92,7 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       Qt::Core
       Qt::Widgets
       $<$<PLATFORM_ID:Windows>:ws2_32>
+      $<$<PLATFORM_ID:Windows>:bcrypt>
   )
   set_target_properties_obs(
     ctd-live-source
@@ -99,6 +124,11 @@ find_package(FFmpeg REQUIRED COMPONENTS avcodec avformat avutil)
 find_package(FFmpeg REQUIRED COMPONENTS swresample swscale)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE FFmpeg::avcodec FFmpeg::avformat FFmpeg::avutil)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE FFmpeg::swresample FFmpeg::swscale)
+
+# libcurl for streaming file transfers to and from CTD Relay (Show Profiles, docs/show-profiles-s2.md). Also the copy OBS
+# runs with: obs-deps' libcurl.dll (Schannel) on Windows, the SDK's on macOS, the system's on Linux. Nothing is bundled.
+find_package(CURL REQUIRED)
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE CURL::libcurl)
 
 if(ENABLE_FRONTEND_API)
   find_package(obs-frontend-api REQUIRED)
@@ -138,8 +168,32 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/issues.c src/obs/sync-group
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/obs-watch.c src/obs/servers.c src/ui/servers-dialog.cpp)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/http-client.c src/multistream.c src/ui/multistream-dock.cpp)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obsws-config.c)
+# Show Profiles (design: hub epics/show-profiles-design.md). The pure-logic files are shared with ctd-show-tests.
+set(
+  CTD_SHOW_PURE_SOURCES
+  src/show/assets.c
+  src/show/bundle.c
+  src/show/devices-identity.c
+  src/show/devices.c
+  src/show/export.c
+  src/show/ini.c
+  src/show/json.c
+  src/show/manifest.c
+  src/show/scrub.c
+  src/show/sha256.c
+  src/show/show-fs.c
+  src/show/store.c
+  src/show/sync-core.c
+  src/show/sync-flow.c
+  src/show/tar.c
+)
+target_sources(
+  ${CMAKE_PROJECT_NAME}
+  PRIVATE ${CTD_SHOW_PURE_SOURCES} src/show/apply.c src/show/device-map.c src/show/show.c src/show/sync.c
+)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/device-map-dialog.cpp src/ui/show-section.cpp)
 if(WIN32)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32 bcrypt)
 endif()
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
@@ -162,3 +216,9 @@ if(ENABLE_PROBE)
     target_link_libraries(ltc-gen PRIVATE m)
   endif()
 endif()
+
+# Show Profiles pure-logic tests (tickets T6, T7, T9, T10): C only, no libobs. Not part of "all"; build the target, then
+# run ctest. test/show/CMakeLists.txt also builds on its own (CI: .github/workflows/show-tests.yaml).
+#   cmake --build --preset <preset> --target ctd-show-tests && ctest --test-dir <build dir> -C RelWithDebInfo
+enable_testing()
+add_subdirectory(test/show)

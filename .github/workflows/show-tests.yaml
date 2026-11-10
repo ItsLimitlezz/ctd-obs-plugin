@@ -1,0 +1,32 @@
+name: Show Profiles Tests
+on:
+  pull_request:
+    paths:
+      - src/show/**
+      - test/show/**
+      - .github/workflows/show-tests.yaml
+  push:
+    branches: [main]
+    paths:
+      - src/show/**
+      - test/show/**
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    name: ctd-show-unit (${{ matrix.os }}) 🧪
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run the pure-logic tests 🧪
+        shell: bash
+        run: |
+          cmake -S test/show -B build-show-tests -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-show-tests --config Debug
+          ctest --test-dir build-show-tests -C Debug --output-on-failure

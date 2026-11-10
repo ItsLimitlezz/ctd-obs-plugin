@@ -103,6 +103,11 @@ void ms_shutdown(void);
 void ms_snapshot_get(struct ms_snapshot *out);
 void ms_snapshot_free(struct ms_snapshot *snapshot);
 
+/* Show Profiles sync (src/show/sync.c): copies of the API base URL (".../api/v1"), the token and the chosen profile
+ * (NULL when none), all freed with bfree. False (all NULL) unless connected with a token CTD Relay accepted. The token
+ * is never logged or shown. */
+bool ms_show_access(char **api_base, char **token, char **profile_id);
+
 /* "nas.local:30080", "http://192.0.2.10:30080" or a full ".../api/v1" URL. Changing it disconnects. */
 void ms_set_server(const char *server);
 /* Asks CTD Relay for a pairing code (H18). */
