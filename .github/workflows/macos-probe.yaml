@@ -1,0 +1,40 @@
+name: macOS smoke probe (temporary, issue 30)
+on:
+  push:
+    branches: [mid/macos-ci-probe]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  probe:
+    name: probe ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: no-plugin-26, os: macos-26, no_plugin: '1', lldb: '' }
+          - { name: plugin-lldb-26, os: macos-26, no_plugin: '', lldb: '1' }
+          - { name: plugin-15, os: macos-15, no_plugin: '', lldb: '' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ctd-live-source-0.1.0-macos-universal-bbf174bab
+          path: ${{ runner.temp }}/plugin
+          run-id: 42745575547
+          github-token: ${{ github.token }}
+      - name: Probe
+        env:
+          SMOKE_NO_PLUGIN: ${{ matrix.no_plugin }}
+          SMOKE_LLDB: ${{ matrix.lldb }}
+        run: |
+          sw_vers
+          bash test/macos-smoke.sh "$(find "${{ runner.temp }}/plugin" -type f | head -n 1)" || true
+          echo '--- obs-stdout tail'; tail -n 200 test/out/macos/obs-stdout.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-${{ matrix.name }}
+          path: test/out/macos/

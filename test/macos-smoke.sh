@@ -52,6 +52,7 @@ echo '::endgroup::'
 
 echo '::group::Install the plugin'
 mkdir -p "${config}/plugins"
+if [[ -n "${SMOKE_NO_PLUGIN:-}" ]]; then note "probe: no plugin installed"; else
 case "${package}" in
   *.pkg)
     # the package installs for the current user only (distribution.in), as a person double-clicking it would
@@ -73,6 +74,7 @@ otool -L "${binary}" | tee "${out}/plugin-libraries.txt"
 lipo -archs "${binary}" | grep -q arm64 && lipo -archs "${binary}" | grep -q x86_64 \
   && pass "universal binary ($(lipo -archs "${binary}"))" || fail "not universal: $(lipo -archs "${binary}")"
 codesign -dv "${bundle}" > "${out}/plugin-codesign.txt" 2>&1 || true
+fi
 echo '::endgroup::'
 
 echo '::group::Test feed'
@@ -155,7 +157,19 @@ EOF
 echo '::endgroup::'
 
 echo '::group::Run OBS'
-"${work}/OBS.app/Contents/MacOS/OBS" --disable-updater --disable-shutdown-check --multi > "${out}/obs-stdout.log" 2>&1 &
+if [[ -n "${SMOKE_LLDB:-}" ]]; then
+  printf '%s\n' \
+    'breakpoint set -r "^QWidget::setCursor"' \
+    'breakpoint command add -o "bt 12" 1' \
+    'breakpoint set -n "QImage::toCGImage() const"' \
+    'breakpoint command add -o "bt 16" 2' \
+    'breakpoint modify --auto-continue true 1 2' > "${work}/lldb.cmds"
+  lldb --batch -s "${work}/lldb.cmds" -o run -k "bt 30" -k "register read" -k "frame select 6" -k "register read" \
+    -k "quit 1" -- "${work}/OBS.app/Contents/MacOS/OBS" --disable-updater --disable-shutdown-check --multi \
+    > "${out}/obs-stdout.log" 2>&1 &
+else
+  "${work}/OBS.app/Contents/MacOS/OBS" --disable-updater --disable-shutdown-check --multi > "${out}/obs-stdout.log" 2>&1 &
+fi
 obs_pid=$!
 
 if wait_for '\[ctd-live\] plugin loaded' 60; then
