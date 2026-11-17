@@ -1,9 +1,12 @@
 #!/bin/bash
-# Smoke test on a Mac (CI's macos-26 runner): installs the built plugin into a real OBS, plays it a test feed over SRT,
-# drops and restores the feed, quits OBS, and checks the log. Leaves screenshots and logs in test/out/macos.
+# Smoke test on a Mac (CI's macos-15-intel and macos-26 runners): installs the built plugin into a real OBS, plays it a
+# test feed over SRT, drops and restores the feed, quits OBS, and checks the log. Leaves screenshots and logs in
+# test/out/macos.
 #   macos-smoke.sh <the build's .pkg, .tar.xz or .zip>
 #   OBS_VERSION      32.2.2 (the version buildspec.json builds against)
 #   MEDIAMTX_VERSION v1.21.3
+#   SMOKE_ALLOW_RUNNER_CRASH=1  if OBS dies by itself with the known crash of GitHub's arm64 runners (issue #30), report
+#                               it as a warning and stop, instead of failing every check after it
 set -euo pipefail
 
 package="$1"
@@ -20,16 +23,45 @@ fail() { echo "::error::$*"; echo "- ❌ $*" >> "${out}/summary.md"; failures=$(
 pass() { echo "$*"; echo "- ✅ $*" >> "${out}/summary.md"; }
 note() { echo "::warning::$*"; echo "- ⚠️ $*" >> "${out}/summary.md"; }
 log_file() { ls -t "${config}/logs/"*.txt 2> /dev/null | head -n 1 || true; }
-# waits up to $2 seconds for a line matching $1 in OBS's log
+# waits up to $2 seconds for a line matching $1 in OBS's log (gives up early if OBS has exited)
 wait_for() {
   local pattern="$1" seconds="$2"
   for ((i = 0; i < seconds; i++)); do
     local log
     log="$(log_file)"
     if [[ -n "${log}" ]] && grep -E -q -- "${pattern}" "${log}"; then return 0; fi
+    if [[ -n "${obs_pid:-}" ]] && ! kill -0 "${obs_pid}" 2> /dev/null; then return 1; fi
     sleep 1
   done
   return 1
+}
+# OBS 32.2.2 crashes by itself on GitHub's arm64 macOS runner images (from November 2026), with or without this plugin,
+# when it loads the scene collection: see macos-known-crash.py and issue #30. Where that's allowed
+# (SMOKE_ALLOW_RUNNER_CRASH), a crash report with exactly that signature is a warning, and the test stops there, since
+# nothing after it would test the plugin. Any other crash returns and is a failure as usual.
+runner_crash() {
+  [[ -n "${SMOKE_ALLOW_RUNNER_CRASH:-}" ]] || return 0
+  local report="" log
+  # macOS writes the report some seconds after the process dies
+  for ((i = 0; i < 90; i++)); do
+    report="$(find "${HOME}/Library/Logs/DiagnosticReports" -name 'OBS*.ips' -newer "${work}/obs.dmg" 2> /dev/null \
+      | head -n 1 || true)"
+    [[ -n "${report}" ]] && break
+    sleep 1
+  done
+  [[ -n "${report}" ]] || return 0
+  cp "${report}" "${out}/" || true
+  python3 -I "${here}/macos-known-crash.py" "${report}" || return 0
+  note "OBS crashed by itself while loading the scene collection (Qt::WaitCursor → QImage::toCGImage, no CTD Live code on the stack): the known OBS crash on GitHub's arm64 macOS runners (issue #30). The rest of this test needs OBS running, so it stops here; the full test runs on macos-15-intel."
+  log="$(log_file)"
+  if [[ -n "${log}" ]]; then
+    cp "${log}" "${out}/obs-log.txt"
+    grep -h '\[ctd-live' "${log}" > "${out}/ctd-lines.txt" || true
+  fi
+  kill "${publisher_pid}" "${mediamtx_pid}" 2> /dev/null || true
+  cat "${out}/summary.md"
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then cat "${out}/summary.md" >> "${GITHUB_STEP_SUMMARY}"; fi
+  exit $((failures > 0))
 }
 shot() { screencapture -x "${out}/$1.png" 2> /dev/null || note "couldn't take the $1 screenshot"; }
 
@@ -169,6 +201,7 @@ if wait_for '\[ctd-live:CTD Test\] connected:' 60; then
   pass "the source connected: ${line}"
   [[ "${line}" == *videotoolbox* ]] || note "video isn't on VideoToolbox: ${line}"
 else
+  kill -0 "${obs_pid}" 2> /dev/null || runner_crash
   fail "the source didn't connect to the test feed"
 fi
 sleep 8
