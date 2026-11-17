@@ -6,6 +6,7 @@
 #include "http-client.h"
 #include "obsws-config.h"
 #include "show/library-mirror.h"
+#include "obs/ctd-settings.h"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -23,7 +24,6 @@
 #include <time.h>
 #ifndef _WIN32
 #include <unistd.h>
-#include "obs/ctd-settings.h"
 #endif
 
 #define NS_PER_S 1000000000ull
