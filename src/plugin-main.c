@@ -27,6 +27,8 @@ extern struct obs_source_info ctd_live_audio_source_info;
 /* src/ui/multistream-dock.cpp, src/ui/hub-dock.cpp */
 void ctd_multistream_dock_register(void);
 void ctd_hub_dock_register(void);
+/* src/ui/settings-section.cpp: CTD OBS's Settings ▸ CTD page */
+void ctd_settings_section_register(void);
 
 MODULE_EXPORT const char *obs_module_description(void)
 {
@@ -45,6 +47,7 @@ bool obs_module_load(void)
 	ctd_multistream_dock_register();
 	ctd_servers_dialog_register();
 	ctd_hub_dock_register();
+	ctd_settings_section_register();
 	show_init(); /* Show Profiles: turns itself on once OBS has loaded, only inside CTD OBS */
 	blog(LOG_INFO, "[ctd-live] plugin loaded (version %s)", PLUGIN_VERSION);
 	return true;
