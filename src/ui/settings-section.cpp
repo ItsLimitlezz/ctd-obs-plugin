@@ -145,7 +145,8 @@ private:
 		status_->setText(QString::fromUtf8(s.message));
 		approveUrl_ = QString::fromUtf8(s.approve_url);
 		approve_->setVisible(s.link == MS_PAIRING && !approveUrl_.isEmpty());
-		connect_->setText(text(s.link != MS_DISCONNECTED ? "Settings.Relay.Disconnect" : "Settings.Relay.Connect"));
+		connect_->setText(
+			text(s.link != MS_DISCONNECTED ? "Settings.Relay.Disconnect" : "Settings.Relay.Connect"));
 		profile_->setEnabled(s.link == MS_CONNECTED && !s.profile_locked);
 		share_->setChecked(s.share_obs_websocket);
 		shareStatus_->setText(QString::fromUtf8(s.obs_websocket_message));
@@ -161,7 +162,8 @@ private:
 			obs_data_t *p = obs_data_array_item(s.profiles, i);
 			const QString status = str(p, "status");
 			labels << text("Settings.Relay.ProfileItem")
-					  .arg(str(p, "name"), status.isEmpty() ? text("Settings.Relay.Offline") : status);
+					  .arg(str(p, "name"),
+					       status.isEmpty() ? text("Settings.Relay.Offline") : status);
 			ids << str(p, "id");
 			obs_data_release(p);
 		}
@@ -210,7 +212,7 @@ private:
 						 .arg(server.isEmpty() ? text("Settings.Relay.ThisServer") : server);
 			detail += "\n\n";
 			detail += text(server.startsWith("https://", Qt::CaseInsensitive) ? "Settings.Relay.ShareHttps"
-											   : "Settings.Relay.ShareHttp");
+											  : "Settings.Relay.ShareHttp");
 			if (QMessageBox::question(this, text("Settings.Relay.Title"),
 						  detail + "\n\n" + text("Settings.Relay.ShareQuestion")) !=
 			    QMessageBox::Yes) {
