@@ -230,8 +230,8 @@ inline void applyTheme(QWidget *root)
 	root->setFont(font(Face::Mono, 12));
 }
 
-/* A label in the warning style (amber, bold), or back to normal */
-inline void setWarning(QWidget *label, bool warning);
+/* A label in the warning style (amber, bold), or back to its normal role (e.g. "muted"; none: plain) */
+inline void setWarning(QWidget *label, bool warning, const char *normalRole = nullptr);
 
 /* A dock's scrolling body. OBS (Qt) only lets a dock into an area that fits its minimum size, so a dock whose
  * sections are all stacked in one fixed layout is too tall for most areas and won't dock. This scroll area asks for
@@ -323,9 +323,11 @@ inline void repolish(QWidget *widget)
 	widget->style()->polish(widget);
 }
 
-inline void setWarning(QWidget *label, bool warning)
+inline void setWarning(QWidget *label, bool warning, const char *normalRole)
 {
-	label->setProperty("ctdRole", warning ? QVariant(QStringLiteral("warning")) : QVariant());
+	label->setProperty("ctdRole", warning       ? QVariant(QStringLiteral("warning"))
+				      : normalRole ? QVariant(QString::fromLatin1(normalRole))
+						   : QVariant());
 	repolish(label);
 }
 
