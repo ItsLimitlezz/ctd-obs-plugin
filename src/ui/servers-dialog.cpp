@@ -1,5 +1,5 @@
 /*
- * Tools ▸ CTD Live servers (SPEC 5.1, H1 to H4): add, edit, test and remove the MediaMTX server profiles the sources
+ * Tools ▸ CTD Hub servers (SPEC 5.1, H1 to H4): add, edit, test and remove the MediaMTX server profiles the sources
  * read from. Saving a profile reconnects every source that uses it. The secrets are typed here and stored in the
  * plugin's own config; they are never shown again in clear or logged.
  */
@@ -47,11 +47,11 @@ class ServersDialog : public QDialog {
 public:
 	explicit ServersDialog(QWidget *parent) : QDialog(parent)
 	{
-		setWindowTitle("CTD Live servers");
+		setWindowTitle("CTD Hub servers");
 		setWindowIcon(ctdIcon("obs-plugin-64.png"));
 		ctd::applyTheme(this);
 		auto *outer = new QVBoxLayout(this);
-		outer->addLayout(ctdHeader(this, "obs-plugin-64.png", "CTD Live servers"));
+		outer->addLayout(ctdHeader(this, "obs-plugin-64.png", "CTD Hub servers"));
 		auto *layout = new QHBoxLayout();
 		outer->addLayout(layout, 1);
 
@@ -206,7 +206,7 @@ private:
 	{
 		if (editingId_.isEmpty())
 			return;
-		if (QMessageBox::question(this, "CTD Live servers",
+		if (QMessageBox::question(this, "CTD OBS",
 					  QString("Remove \"%1\"? Sources using it move to the default server.")
 						  .arg(name_->text())) != QMessageBox::Yes)
 			return;
@@ -218,14 +218,12 @@ private:
 	{
 		const std::string host = utf8(host_);
 		if (host.empty()) {
-			QMessageBox::information(this, "CTD Live servers",
-						 "Type the address of the machine running MediaMTX.");
+			QMessageBox::information(this, "CTD OBS", "Type the address of the machine running MediaMTX.");
 			return;
 		}
 		const std::string passphrase = utf8(passphrase_);
 		if (!passphrase.empty() && (passphrase.size() < 10 || passphrase.size() > 79)) {
-			QMessageBox::information(this, "CTD Live servers",
-						 "An SRT passphrase is 10 to 79 characters long.");
+			QMessageBox::information(this, "CTD OBS", "An SRT passphrase is 10 to 79 characters long.");
 			return;
 		}
 		const std::string name = utf8(name_), apiUrl = utf8(apiUrl_), apiUser = utf8(apiUser_);
@@ -233,8 +231,7 @@ private:
 		const std::string readUser = utf8(readUser_), readPass = readPass_->text().toStdString();
 		const std::string webhook = utf8(webhook_);
 		if (!webhook.empty() && webhook.rfind("http://", 0) != 0 && webhook.rfind("https://", 0) != 0) {
-			QMessageBox::information(this, "CTD Live servers",
-						 "A webhook URL starts with http:// or https://.");
+			QMessageBox::information(this, "CTD OBS", "A webhook URL starts with http:// or https://.");
 			return;
 		}
 
@@ -335,5 +332,5 @@ extern "C" void ctd_servers_dialog_open(void)
 
 extern "C" void ctd_servers_dialog_register(void)
 {
-	obs_frontend_add_tools_menu_item("CTD Live servers…", openFromMenu, nullptr);
+	obs_frontend_add_tools_menu_item("CTD Hub servers…", openFromMenu, nullptr);
 }

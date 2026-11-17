@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-#define SHOW_LOG_PREFIX "[ctd-show] "
+#define SHOW_LOG_PREFIX "[CTD] show: "
 
 /* state (show.c) */
 void show_set_busy(enum show_busy busy);
