@@ -65,6 +65,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/loss-card.c src/obs/loss-vi
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/api/poller.c src/ui/hub-dock.cpp src/obs/ws-vendor.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/issues.c src/obs/sync-groups.c src/obs/webhook.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/obs-watch.c src/obs/servers.c src/ui/servers-dialog.cpp)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/ctd-settings.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/http-client.c src/multistream.c src/ui/multistream-dock.cpp)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obsws-config.c)
 # Show Profiles (design: hub epics/show-profiles-design.md). The pure-logic files are shared with ctd-show-tests.

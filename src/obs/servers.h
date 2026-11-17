@@ -49,6 +49,8 @@ void ctd_server_free(struct ctd_server *server);
 /* Adds (empty id) or replaces a profile and saves. Returns its id in id_out (may be NULL). */
 void servers_put(const struct ctd_server *server, char *id_out, size_t size);
 void servers_remove(const char *id);
+/* adds a server under its own id unless one has it (profile import); true if added */
+bool servers_import(const struct ctd_server *server);
 
 /* The API's host and port from api_url ("http://host:9997"). False if it is blank or can't be read. */
 bool ctd_server_api_address(const struct ctd_server *server, char *host, size_t size, int *port);
