@@ -51,6 +51,7 @@
 #include "../obs/sync-groups.h"
 #include "../obs/servers.h"
 #include "icons.hpp"
+#include "../obs/ctd-settings.h"
 
 namespace {
 
@@ -342,15 +343,8 @@ private:
 
 	/* ------------------------------------------------------- H13 auto-add -- */
 
-	static char *hubConfigFile()
-	{
-		char *dir = obs_module_config_path("");
-		if (dir) {
-			os_mkdirs(dir);
-			bfree(dir);
-		}
-		return obs_module_config_path("hub.json");
-	}
+	/* CTD OBS's CTD settings folder, or the plugin's own config folder (ctd-settings.c) */
+	static char *hubConfigFile() { return ctd_settings_path("hub.json"); }
 
 	void fillScenes(const QString &keep)
 	{
