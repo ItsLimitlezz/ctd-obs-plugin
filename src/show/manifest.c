@@ -251,7 +251,7 @@ bool show_manifest_validate(const cj *m, char *err, size_t err_size)
 	if (!is_whole(schema))
 		return bad(&v, "manifest: missing schema");
 	if (cj_int(schema, 0) != SHOW_MANIFEST_SCHEMA)
-		return bad(&v, "manifest: schema %lld is not supported by this CTD OBS (update CTD OBS)",
+		return bad(&v, "manifest: schema %lld is not supported by this version of CTD OBS (update CTD OBS)",
 			   (long long)cj_int(schema, 0));
 
 	if (!show_is_uuid(cj_get_str(m, "showProfileId")))

@@ -267,10 +267,7 @@ void ShowProfilesSection::refresh()
 				message += (message.isEmpty() ? QString() : QString("\n")) +
 					   QString::fromUtf8("\xE2\x80\xA2 ") + QString::fromUtf8(w);
 		}
-		if (s.message_is_error)
-			status_->setStyleSheet("color: #e5a50a; font-weight: bold;");
-		else
-			status_->setStyleSheet(QString());
+		ctd::setWarning(status_, s.message_is_error, "muted"); /* status_ is muted normally */
 		status_->setText(message);
 	}
 
