@@ -159,10 +159,10 @@ static obs_data_t *issue_data(const struct condition *c)
 static void announce(const struct condition *c, bool raised)
 {
 	if (raised)
-		blog(c->severity == ISSUE_INFO ? LOG_INFO : LOG_WARNING, "[ctd-live] issue (%s): %s. %s",
+		blog(c->severity == ISSUE_INFO ? LOG_INFO : LOG_WARNING, "[CTD] live-source: issue (%s): %s. %s",
 		     issue_severity_name(c->severity), c->title, c->cause);
 	else
-		blog(LOG_INFO, "[ctd-live] issue cleared: %s (after %lld s)", c->title,
+		blog(LOG_INFO, "[CTD] live-source: issue cleared: %s (after %lld s)", c->title,
 		     (long long)((c->last_seen_ms - c->first_seen_ms) / 1000));
 	obs_data_t *data = issue_data(c);
 	ws_vendor_emit(raised ? "IssueRaised" : "IssueCleared", data);
@@ -419,13 +419,11 @@ static void path_rules(const struct feed *f, const struct mtx_poll_snapshot *sna
 	if (!s || !s->live) {
 		/* MediaMTX drops a path nothing publishes to unless it is in its config, so a missing path usually means
 		 * just that */
-		dstr_printf(&title, "Camera offline: %s", f->path);
-		dstr_printf(
-			&cause,
-			"Nothing is publishing to \"%s\" on %s. Check that the camera app is streaming, and to this "
-			"stream name (the CTD Hub can copy its publish URL).",
-			f->path, f->server_name);
-		const struct issue_action actions[] = {{"copy-url", "Copy the camera's SRT publish URL"}};
+		dstr_printf(&title, obs_module_text("Issue.CameraOffline.Title"), f->path);
+		dstr_printf(&cause, obs_module_text("Issue.CameraOffline.Cause"), f->path, f->server_name);
+		struct issue_action actions[1] = {{"copy-url", ""}};
+		snprintf(actions[0].label, sizeof(actions[0].label), "%s",
+			 obs_module_text("Issue.CameraOffline.Action"));
 		const struct observation o = {"camera-offline", ISSUE_WARNING, "", f->server_id, f->path,
 					      title.array,      cause.array,   5,  actions,      1};
 		observe(&o, now);
@@ -435,11 +433,8 @@ static void path_rules(const struct feed *f, const struct mtx_poll_snapshot *sna
 		/* Upstream packet loss: the camera's SRT link, over 2% for 10 s */
 		if (s->has_link && s->loss_percent > 2.0) {
 			const int suggest = (int)fmax(120.0, ceil(4.0 * s->rtt_ms / 10.0) * 10.0);
-			dstr_printf(&title, "Upstream packet loss on %s (%.1f%%)", f->path, s->loss_percent);
-			dstr_printf(&cause,
-				    "The camera's link to the server is losing packets. Raise the camera's SRT latency "
-				    "to at least %d ms (4 × its %.0f ms round trip), or lower its bitrate.",
-				    suggest, s->rtt_ms);
+			dstr_printf(&title, obs_module_text("Issue.UpstreamLoss.Title"), f->path, s->loss_percent);
+			dstr_printf(&cause, obs_module_text("Issue.UpstreamLoss.Cause"), suggest, s->rtt_ms);
 			const struct observation o = {"upstream-loss", ISSUE_WARNING, "",          f->server_id,
 						      f->path,         title.array,   cause.array, 10};
 			observe(&o, now);
@@ -448,12 +443,8 @@ static void path_rules(const struct feed *f, const struct mtx_poll_snapshot *sna
 		 * when the sender isn't filling it, so "bitrate above 80% of capacity" would cry wolf; it stays in the
 		 * dock's tooltip.) */
 		if (s->has_link && s->rtt_ms > 800) {
-			dstr_printf(&title, "Upstream link slow on %s", f->path);
-			dstr_printf(
-				&cause,
-				"The round trip to the camera is %.0f ms. Lower the camera's bitrate, or move it to a "
-				"better connection.",
-				s->rtt_ms);
+			dstr_printf(&title, obs_module_text("Issue.UpstreamSlow.Title"), f->path);
+			dstr_printf(&cause, obs_module_text("Issue.UpstreamSlow.Cause"), s->rtt_ms);
 			const struct observation o = {"upstream-slow", ISSUE_WARNING, "",          f->server_id,
 						      f->path,         title.array,   cause.array, 10};
 			observe(&o, now);
@@ -462,11 +453,9 @@ static void path_rules(const struct feed *f, const struct mtx_poll_snapshot *sna
 		struct path_history *h = path_history_for(f->server_id, f->path);
 		/* still sending: nothing at all is a camera gone, which "camera offline" covers */
 		if (h->average_kbps > 300 && s->bitrate_kbps > 0 && s->bitrate_kbps < 0.3 * h->average_kbps) {
-			dstr_printf(&title, "Bitrate collapsed on %s", f->path);
-			dstr_printf(&cause,
-				    "The camera sends %.0f kbps, down from about %.0f. A struggling connection, or the "
-				    "camera app throttling.",
-				    s->bitrate_kbps, h->average_kbps);
+			dstr_printf(&title, obs_module_text("Issue.BitrateCollapsed.Title"), f->path);
+			dstr_printf(&cause, obs_module_text("Issue.BitrateCollapsed.Cause"), s->bitrate_kbps,
+				    h->average_kbps);
 			const struct observation o = {"bitrate-collapsed", ISSUE_INFO,  "", f->server_id, f->path,
 						      title.array,         cause.array, 5};
 			observe(&o, now);
@@ -498,17 +487,14 @@ static void source_rules(const struct feed *f, uint64_t now)
 	for (size_t i = 0; i < h->snap_count; i++)
 		recent += now - h->snaps[i] < S_TO_NS(300);
 	if (recent > 3) {
-		dstr_printf(&title, "Frequent snaps on %s", f->name);
-		dstr_printf(&cause,
-			    "It snapped to the live edge %zu times in 5 minutes: the feed keeps arriving late. "
-			    "Raise this source's SRT latency or its drift cap.",
-			    recent);
+		dstr_printf(&title, obs_module_text("Issue.FrequentSnaps.Title"), f->name);
+		dstr_printf(&cause, obs_module_text("Issue.FrequentSnaps.Cause"), recent);
 		/* D4: double this source's SRT latency (at least 400 ms, at most 2 s); D5 may do it on its own */
 		const int target = f->latency_ms * 2 < 400 ? 400 : f->latency_ms * 2 > 2000 ? 2000 : f->latency_ms * 2;
 		struct issue_action actions[1] = {{"", ""}};
 		snprintf(actions[0].id, sizeof(actions[0].id), "raise-latency:%d", target);
-		snprintf(actions[0].label, sizeof(actions[0].label),
-			 "Raise this source's SRT latency to %d ms (from %d)", target, f->latency_ms);
+		snprintf(actions[0].label, sizeof(actions[0].label), obs_module_text("Issue.FrequentSnaps.Action"),
+			 target, f->latency_ms);
 		const bool can_raise = f->latency_ms < 2000;
 		const struct observation o = {"frequent-snaps",
 					      ISSUE_WARNING,
@@ -526,9 +512,8 @@ static void source_rules(const struct feed *f, uint64_t now)
 
 	/* A/V drift: soft correction pinned at its 0.2% limit for 30 s */
 	if (live && labs(f->correction_ppm) >= 1990) {
-		dstr_printf(&title, "Sender clock drifting on %s", f->name);
-		dstr_printf(&cause, "Soft correction has been at its limit for 30 s: the camera's clock runs far off. "
-				    "The picture still snaps back if it drifts past the cap.");
+		dstr_printf(&title, obs_module_text("Issue.AvDrift.Title"), f->name);
+		dstr_copy(&cause, obs_module_text("Issue.AvDrift.Cause"));
 		const struct observation o = {"av-drift", ISSUE_INFO,  f->name,     f->server_id,
 					      f->path,    title.array, cause.array, 30};
 		observe(&o, now);
@@ -536,12 +521,8 @@ static void source_rules(const struct feed *f, uint64_t now)
 
 	/* Audio not at 48 kHz */
 	if (live && f->sample_rate > 0 && f->sample_rate != 48000) {
-		dstr_printf(&title, "Audio at %g kHz on %s", f->sample_rate / 1000.0, f->name);
-		dstr_printf(&cause,
-			    "The camera sends %g kHz audio, often a Bluetooth microphone on a phone. The plugin "
-			    "converts it to 48 kHz, so it plays correctly; for better sound use a wired or "
-			    "built-in mic.",
-			    f->sample_rate / 1000.0);
+		dstr_printf(&title, obs_module_text("Issue.AudioRate.Title"), f->sample_rate / 1000.0, f->name);
+		dstr_printf(&cause, obs_module_text("Issue.AudioRate.Cause"), f->sample_rate / 1000.0);
 		const struct observation o = {"audio-rate", ISSUE_INFO,  f->name,     f->server_id,
 					      f->path,      title.array, cause.array, 3};
 		observe(&o, now);
@@ -549,8 +530,8 @@ static void source_rules(const struct feed *f, uint64_t now)
 
 	/* Audio missing: a video feed with no audio track */
 	if (live && strcmp(f->kind, "video") == 0 && *f->video_codec && !*f->audio_codec) {
-		dstr_printf(&title, "No audio on %s", f->name);
-		dstr_printf(&cause, "The stream has no audio track. Check the camera app's audio setting.");
+		dstr_printf(&title, obs_module_text("Issue.AudioMissing.Title"), f->name);
+		dstr_copy(&cause, obs_module_text("Issue.AudioMissing.Cause"));
 		const struct observation o = {"audio-missing", ISSUE_INFO,  f->name,     f->server_id,
 					      f->path,         title.array, cause.array, 5};
 		observe(&o, now);
@@ -562,10 +543,8 @@ static void source_rules(const struct feed *f, uint64_t now)
 
 	/* Audio silent: both channels under -60 dBFS for 10 s while connected */
 	if (has_audio && loud < -60.0) {
-		dstr_printf(&title, "Audio silent on %s", f->name);
-		dstr_printf(&cause,
-			    "No sound above -60 dBFS for 10 s. Check the camera's microphone: muted, unplugged, or "
-			    "the wrong input selected in the camera app.");
+		dstr_printf(&title, obs_module_text("Issue.AudioSilent.Title"), f->name);
+		dstr_copy(&cause, obs_module_text("Issue.AudioSilent.Cause"));
 		const struct observation o = {"audio-silent", ISSUE_WARNING, f->name,     f->server_id,
 					      f->path,        title.array,   cause.array, 10};
 		observe(&o, now);
@@ -573,11 +552,8 @@ static void source_rules(const struct feed *f, uint64_t now)
 
 	/* Audio clipping: more than 1% of samples at full scale */
 	if (has_audio && f->clipped_percent > 1.0) {
-		dstr_printf(&title, "Audio clipping on %s", f->name);
-		dstr_printf(&cause,
-			    "%.1f%% of the samples hit full scale: the sound distorts. The gain is set too high "
-			    "upstream (the mic or the camera app); turning it down in OBS won't undo the distortion.",
-			    f->clipped_percent);
+		dstr_printf(&title, obs_module_text("Issue.AudioClipping.Title"), f->name);
+		dstr_printf(&cause, obs_module_text("Issue.AudioClipping.Cause"), f->clipped_percent);
 		const struct observation o = {"audio-clipping", ISSUE_INFO,  f->name,     f->server_id,
 					      f->path,          title.array, cause.array, 10};
 		observe(&o, now);
@@ -585,17 +561,16 @@ static void source_rules(const struct feed *f, uint64_t now)
 
 	/* One channel dead: one side 40 dB below the other while the other carries sound */
 	if (has_audio && loud > -50.0 && loud - quiet > 40.0) {
-		dstr_printf(&title, "One audio channel dead on %s", f->name);
+		dstr_printf(&title, obs_module_text("Issue.ChannelDead.Title"), f->name);
 		const bool left_live = f->peak_db[0] > f->peak_db[1];
 		dstr_printf(&cause,
-			    "The %s channel is %.0f dB below the other: a mono mic on one side of a stereo input, "
-			    "or a bad cable. Putting the live channel on both sides fixes it.",
-			    left_live ? "right" : "left", loud - quiet);
+			    obs_module_text(left_live ? "Issue.ChannelDead.CauseRight" : "Issue.ChannelDead.CauseLeft"),
+			    loud - quiet);
 		/* D4/D5: A1, only while the channels are as sent (any other choice was made on purpose) */
 		struct issue_action actions[1] = {{"", ""}};
 		snprintf(actions[0].id, sizeof(actions[0].id), "channels:%d", left_live ? 1 : 2);
-		snprintf(actions[0].label, sizeof(actions[0].label), "Use the %s channel on both sides",
-			 left_live ? "left" : "right");
+		snprintf(actions[0].label, sizeof(actions[0].label), "%s",
+			 obs_module_text(left_live ? "Issue.ChannelDead.ActionLeft" : "Issue.ChannelDead.ActionRight"));
 		const bool as_sent = f->audio_channels == 0;
 		const struct observation o = {"channel-dead",
 					      ISSUE_WARNING,
@@ -614,27 +589,22 @@ static void source_rules(const struct feed *f, uint64_t now)
 	/* S7: LTC on a channel that isn't the timecode input: a loud buzz in the program audio */
 	if (has_audio && f->timecode_source == 0 && f->timecode_detected > 0) {
 		const int channel = f->timecode_detected;
-		const char *name = channel == 1 ? "left" : channel == 2 ? "right" : NULL;
-		dstr_printf(&title, "Timecode on a program channel of %s", f->name);
-		if (name)
-			dstr_printf(
-				&cause,
-				"The %s channel carries LTC timecode: a loud buzz in the program audio. Using it as "
-				"the timecode input takes it out of the mix (the other channel plays on both sides) "
-				"and lets the feed join a sync group.",
-				name);
+		const bool side = channel == 1 || channel == 2; /* left or right */
+		dstr_printf(&title, obs_module_text("Issue.TimecodeOnProgram.Title"), f->name);
+		if (side)
+			dstr_copy(&cause, obs_module_text(channel == 1 ? "Issue.TimecodeOnProgram.CauseLeft"
+								       : "Issue.TimecodeOnProgram.CauseRight"));
 		else
-			dstr_printf(
-				&cause,
-				"Channel %d carries LTC timecode: a loud buzz in the program audio. Using it as the "
-				"timecode input takes it out of the mix and lets the feed join a sync group.",
-				channel);
+			dstr_printf(&cause, obs_module_text("Issue.TimecodeOnProgram.CauseChannel"), channel);
 		struct issue_action actions[1] = {{"", ""}};
 		snprintf(actions[0].id, sizeof(actions[0].id), "timecode:%d", channel);
-		if (name)
-			snprintf(actions[0].label, sizeof(actions[0].label), "Use the %s channel as timecode", name);
+		if (side)
+			snprintf(actions[0].label, sizeof(actions[0].label), "%s",
+				 obs_module_text(channel == 1 ? "Issue.TimecodeOnProgram.ActionLeft"
+							      : "Issue.TimecodeOnProgram.ActionRight"));
 		else
-			snprintf(actions[0].label, sizeof(actions[0].label), "Use channel %d as timecode", channel);
+			snprintf(actions[0].label, sizeof(actions[0].label),
+				 obs_module_text("Issue.TimecodeOnProgram.ActionChannel"), channel);
 		const struct observation o = {"timecode-on-program",
 					      ISSUE_WARNING,
 					      f->name,
@@ -652,17 +622,11 @@ static void source_rules(const struct feed *f, uint64_t now)
 	/* S12, S13: a sync group member that lost its timecode, or needs more delay than the group allows */
 	const bool freewheel = strcmp(f->sync_state, "freewheel") == 0;
 	if (*f->sync_group && (freewheel || strcmp(f->sync_state, "at-max") == 0)) {
-		dstr_printf(&title, "Sync lost on %s (group \"%s\")", f->name, f->sync_group);
+		dstr_printf(&title, obs_module_text("Issue.SyncLost.Title"), f->name, f->sync_group);
 		if (freewheel)
-			dstr_printf(&cause,
-				    "Its timecode stopped: the LTC cable or box, or the feed itself. It holds its last "
-				    "delay, so it stays close, and relocks without a jump when timecode returns.");
+			dstr_copy(&cause, obs_module_text("Issue.SyncLost.CauseFreewheel"));
 		else
-			dstr_printf(
-				&cause,
-				"It would need %.0f ms of delay to line up, more than the group's max. It is held at "
-				"the max; raise the group's max delay (up to 5000 ms) if that much is expected.",
-				f->sync_offset_ms);
+			dstr_printf(&cause, obs_module_text("Issue.SyncLost.CauseAtMax"), f->sync_offset_ms);
 		const struct observation o = {"sync-lost", ISSUE_WARNING, f->name,     f->server_id,
 					      f->path,     title.array,   cause.array, 2};
 		observe(&o, now);
@@ -670,12 +634,11 @@ static void source_rules(const struct feed *f, uint64_t now)
 
 	/* Frozen picture: frames keep arriving but the picture hasn't changed for 5 s (a stuck camera app) */
 	if (live && strcmp(f->kind, "video") == 0 && f->frozen_ms >= 5000) {
-		dstr_printf(&title, "Frozen picture on %s", f->name);
-		dstr_printf(&cause,
-			    "Frames keep arriving but the picture hasn't changed for %ld s: the camera app is "
-			    "stuck. Kicking the publisher makes it reconnect.",
-			    f->frozen_ms / 1000);
-		const struct issue_action actions[] = {{"kick", "Kick the publisher so the camera reconnects"}};
+		dstr_printf(&title, obs_module_text("Issue.FrozenPicture.Title"), f->name);
+		dstr_printf(&cause, obs_module_text("Issue.FrozenPicture.Cause"), f->frozen_ms / 1000);
+		struct issue_action actions[1] = {{"kick", ""}};
+		snprintf(actions[0].label, sizeof(actions[0].label), "%s",
+			 obs_module_text("Issue.FrozenPicture.Action"));
 		const struct observation o = {"frozen-picture", ISSUE_WARNING,    f->name,     f->server_id,
 					      f->path,          title.array,      cause.array, 0,
 					      actions,          f->writes ? 1 : 0};
@@ -684,9 +647,8 @@ static void source_rules(const struct feed *f, uint64_t now)
 
 	/* Low frame rate: under 80% of the stream's own rate for 10 s */
 	if (live && f->nominal_fps > 1 && f->fps > 0 && f->fps < 0.8 * f->nominal_fps) {
-		dstr_printf(&title, "Low frame rate on %s (%.1f of %.0f fps)", f->name, f->fps, f->nominal_fps);
-		dstr_printf(&cause, "Frames are missing on the way: a weak connection or a struggling camera. Lowering "
-				    "the camera's bitrate or resolution usually helps.");
+		dstr_printf(&title, obs_module_text("Issue.LowFps.Title"), f->name, f->fps, f->nominal_fps);
+		dstr_copy(&cause, obs_module_text("Issue.LowFps.Cause"));
 		const struct observation o = {"low-fps", ISSUE_INFO,  f->name,     f->server_id,
 					      f->path,   title.array, cause.array, 10};
 		observe(&o, now);
@@ -695,14 +657,15 @@ static void source_rules(const struct feed *f, uint64_t now)
 	/* Decoder falling behind: decoding takes longer than a frame lasts, for 5 s */
 	const double fps = f->nominal_fps > 1 ? f->nominal_fps : f->fps;
 	if (live && fps > 1 && f->decode_ms > 1000.0 / fps) {
-		dstr_printf(&title, "Decoder falling behind on %s", f->name);
-		dstr_printf(&cause, "Each frame takes %.1f ms to decode, longer than the %.1f ms it lasts.%s",
-			    f->decode_ms, 1000.0 / fps,
-			    f->decoder_setting == 1
-				    ? " Decoding on the graphics card takes the load off the CPU."
-				    : " The machine is overloaded: close other work, or lower the feed's resolution.");
+		dstr_printf(&title, obs_module_text("Issue.DecoderBehind.Title"), f->name);
+		dstr_printf(&cause,
+			    obs_module_text(f->decoder_setting == 1 ? "Issue.DecoderBehind.CauseCpu"
+								    : "Issue.DecoderBehind.CauseOverloaded"),
+			    f->decode_ms, 1000.0 / fps);
 		/* D4/D5: on the CPU, move it to the graphics card (Auto falls back to the CPU on its own if it can't) */
-		const struct issue_action actions[] = {{"hardware-decode", "Decode on the graphics card (Auto)"}};
+		struct issue_action actions[1] = {{"hardware-decode", ""}};
+		snprintf(actions[0].label, sizeof(actions[0].label), "%s",
+			 obs_module_text("Issue.DecoderBehind.Action"));
 		const bool on_cpu = f->decoder_setting == 1;
 		const struct observation o = {"decoder-behind",
 					      ISSUE_WARNING,
@@ -766,7 +729,7 @@ static void tick(void)
 	for (size_t i = 0; i < fix_count; i++) {
 		char message[256];
 		if (issues_apply(fixes[i].issue_id, fixes[i].action_id, message, sizeof(message), NULL, 0))
-			blog(LOG_INFO, "[ctd-live] auto-fix: %s", message);
+			blog(LOG_INFO, "[CTD] live-source: auto-fix: %s", message);
 	}
 	bfree(fixes);
 
@@ -927,7 +890,7 @@ static void record_fix(const char *source, const char *server_id, const char *pa
 	c->server_id = bstrdup(server_id);
 	c->path = bstrdup(path);
 	c->title = bstrdup(title);
-	c->cause = bstrdup("A fix that was applied. Undo puts the setting back.");
+	c->cause = bstrdup(obs_module_text("Issue.Fix.Cause"));
 	c->raised = true;
 	c->applied_fix = true;
 	c->first_seen_ms = c->last_seen_ms = epoch_ms();
@@ -938,13 +901,13 @@ static void record_fix(const char *source, const char *server_id, const char *pa
 	c->undo_value = previous;
 	engine.seq++;
 	pthread_mutex_unlock(&engine.mutex);
-	blog(LOG_INFO, "[ctd-live] fix applied: %s", title);
+	blog(LOG_INFO, "[CTD] live-source: fix applied: %s", title);
 }
 
 bool issues_apply(const char *issue_id, const char *action_id, char *message, size_t message_size, char *url,
 		  size_t url_size)
 {
-	snprintf(message, message_size, "That issue is gone.");
+	snprintf(message, message_size, "%s", obs_module_text("Issue.Apply.Gone"));
 	if (url && url_size)
 		url[0] = '\0';
 	if (!engine.running || !issue_id || !action_id)
@@ -972,7 +935,7 @@ bool issues_apply(const char *issue_id, const char *action_id, char *message, si
 	if (!found)
 		return false;
 	if (!offered) {
-		snprintf(message, message_size, "That fix isn't offered for this issue.");
+		snprintf(message, message_size, "%s", obs_module_text("Issue.Apply.NotOffered"));
 		return false;
 	}
 
@@ -980,12 +943,12 @@ bool issues_apply(const char *issue_id, const char *action_id, char *message, si
 		const long long target = atoll(action_id + 14);
 		long long previous = 0;
 		if (!set_source_int(source, "latency_ms", target, &previous)) {
-			snprintf(message, message_size, "The source \"%s\" is gone.", source);
+			snprintf(message, message_size, obs_module_text("Issue.Apply.SourceGone"), source);
 			return false;
 		}
 		struct dstr title = {0}, undo = {0};
-		dstr_printf(&title, "Raised %s's SRT latency to %lld ms (was %lld)", source, target, previous);
-		dstr_printf(&undo, "Set it back to %lld ms", previous);
+		dstr_printf(&title, obs_module_text("Issue.Fix.Latency"), source, target, previous);
+		dstr_printf(&undo, obs_module_text("Issue.Fix.LatencyUndo"), previous);
 		record_fix(source, server_id, path, title.array, undo.array, "latency_ms", previous);
 		snprintf(message, message_size, "%s", title.array);
 		dstr_free(&title);
@@ -995,12 +958,13 @@ bool issues_apply(const char *issue_id, const char *action_id, char *message, si
 	if (strcmp(action_id, "hardware-decode") == 0) {
 		long long previous = 0;
 		if (!set_source_int(source, "decoder", 0 /* Auto */, &previous)) {
-			snprintf(message, message_size, "The source \"%s\" is gone.", source);
+			snprintf(message, message_size, obs_module_text("Issue.Apply.SourceGone"), source);
 			return false;
 		}
 		struct dstr title = {0};
-		dstr_printf(&title, "%s now decodes on the graphics card (Auto)", source);
-		record_fix(source, server_id, path, title.array, "Back to decoding on the CPU", "decoder", previous);
+		dstr_printf(&title, obs_module_text("Issue.Fix.HardwareDecode"), source);
+		record_fix(source, server_id, path, title.array, obs_module_text("Issue.Fix.HardwareDecodeUndo"),
+			   "decoder", previous);
 		snprintf(message, message_size, "%s", title.array);
 		dstr_free(&title);
 		return true;
@@ -1009,13 +973,15 @@ bool issues_apply(const char *issue_id, const char *action_id, char *message, si
 		const long long channels = atoll(action_id + 9);
 		long long previous = 0;
 		if (!set_source_int(source, "audio_channels", channels, &previous)) {
-			snprintf(message, message_size, "The source \"%s\" is gone.", source);
+			snprintf(message, message_size, obs_module_text("Issue.Apply.SourceGone"), source);
 			return false;
 		}
 		struct dstr title = {0};
-		dstr_printf(&title, "%s now plays its %s channel on both sides", source,
-			    channels == 1 ? "left" : "right");
-		record_fix(source, server_id, path, title.array, "Back to stereo as sent", "audio_channels", previous);
+		dstr_printf(&title,
+			    obs_module_text(channels == 1 ? "Issue.Fix.ChannelsLeft" : "Issue.Fix.ChannelsRight"),
+			    source);
+		record_fix(source, server_id, path, title.array, obs_module_text("Issue.Fix.ChannelsUndo"),
+			   "audio_channels", previous);
 		snprintf(message, message_size, "%s", title.array);
 		dstr_free(&title);
 		return true;
@@ -1024,27 +990,27 @@ bool issues_apply(const char *issue_id, const char *action_id, char *message, si
 		const long long channel = atoll(action_id + 9);
 		long long previous = 0;
 		if (channel < 1 || channel > 8 || !set_source_int(source, "timecode_input", channel, &previous)) {
-			snprintf(message, message_size, "The source \"%s\" is gone.", source);
+			snprintf(message, message_size, obs_module_text("Issue.Apply.SourceGone"), source);
 			return false;
 		}
 		struct dstr title = {0};
-		dstr_printf(&title, "%s now reads timecode from channel %lld, out of the program audio", source,
-			    channel);
-		record_fix(source, server_id, path, title.array, "Back to no timecode input", "timecode_input",
-			   previous);
+		dstr_printf(&title, obs_module_text("Issue.Fix.Timecode"), source, channel);
+		record_fix(source, server_id, path, title.array, obs_module_text("Issue.Fix.TimecodeUndo"),
+			   "timecode_input", previous);
 		snprintf(message, message_size, "%s", title.array);
 		dstr_free(&title);
 		return true;
 	}
 	if (strcmp(action_id, "undo") == 0) {
 		if (!set_source_int(source, key, undo_value, NULL)) {
-			snprintf(message, message_size, "The source \"%s\" is gone.", source);
+			snprintf(message, message_size, obs_module_text("Issue.Apply.SourceGone"), source);
 			return false;
 		}
 		pthread_mutex_lock(&engine.mutex);
 		for (size_t i = 0; i < engine.conditions.num; i++) {
 			if (strcmp(engine.conditions.array[i].id, issue_id) == 0) {
-				snprintf(message, message_size, "Undone: %s", engine.conditions.array[i].title);
+				snprintf(message, message_size, obs_module_text("Issue.Apply.Undone"),
+					 engine.conditions.array[i].title);
 				free_condition(&engine.conditions.array[i]);
 				da_erase(engine.conditions, i);
 				engine.seq++;
@@ -1052,22 +1018,21 @@ bool issues_apply(const char *issue_id, const char *action_id, char *message, si
 			}
 		}
 		pthread_mutex_unlock(&engine.mutex);
-		blog(LOG_INFO, "[ctd-live] %s", message);
+		blog(LOG_INFO, "[CTD] live-source: %s", message);
 		return true;
 	}
 
 	/* the rest need the server profile */
 	struct ctd_server s;
 	if (!servers_get(server_id, &s)) {
-		snprintf(message, message_size, "The server profile is gone.");
+		snprintf(message, message_size, "%s", obs_module_text("Issue.Apply.ProfileGone"));
 		return false;
 	}
 	bool ok = false;
 	if (strcmp(action_id, "copy-url") == 0) {
 		if (url && url_size)
 			snprintf(url, url_size, "srt://%s:%d?streamid=publish:%s", s.host, s.srt_port, path);
-		snprintf(message, message_size, "The publish URL for \"%s\" is ready to paste into the camera app.",
-			 path);
+		snprintf(message, message_size, obs_module_text("Issue.Apply.UrlReady"), path);
 		ok = true;
 	} else if (strcmp(action_id, "kick") == 0) {
 		ok = issues_kick(s.id, path, message, message_size);
@@ -1080,7 +1045,7 @@ bool issues_kick(const char *server_id, const char *path, char *message, size_t 
 {
 	struct ctd_server s;
 	if (!servers_get(server_id, &s)) {
-		snprintf(message, message_size, "The server profile is gone.");
+		snprintf(message, message_size, "%s", obs_module_text("Issue.Apply.ProfileGone"));
 		return false;
 	}
 	bool ok = false;
@@ -1088,7 +1053,7 @@ bool issues_kick(const char *server_id, const char *path, char *message, size_t 
 	char api_host[256];
 	int api_port = 0;
 	if (!s.allow_writes || !ctd_server_api_address(&s, api_host, sizeof(api_host), &api_port)) {
-		snprintf(message, message_size, "The server profile doesn't allow kicking publishers.");
+		snprintf(message, message_size, "%s", obs_module_text("Issue.Apply.NoKick"));
 	} else {
 		struct mtx_poller *poller = mtx_poller_acquire(s.id);
 		struct mtx_poll_snapshot snap;
@@ -1107,11 +1072,11 @@ bool issues_kick(const char *server_id, const char *path, char *message, size_t 
 		mtx_poller_release(poller);
 		ok = status == MTX_API_OK;
 		snprintf(message, message_size,
-			 ok    ? "Kicked the publisher of \"%s\": the camera should reconnect."
-			 : *id ? "Couldn't kick the publisher of \"%s\"."
-			       : "Nothing is publishing to \"%s\".",
+			 obs_module_text(ok    ? "Issue.Apply.Kicked"
+					 : *id ? "Issue.Apply.KickFailed"
+					       : "Issue.Apply.NothingPublishing"),
 			 path);
-		blog(ok ? LOG_INFO : LOG_WARNING, "[ctd-live] %s", message);
+		blog(ok ? LOG_INFO : LOG_WARNING, "[CTD] live-source: %s", message);
 	}
 	ctd_server_free(&s);
 	return ok;

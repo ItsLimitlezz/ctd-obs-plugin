@@ -1,0 +1,5 @@
+{
+  "sourceType": "macos-avcapture",
+  "settings": { "device": "0x1420000046d082d", "device_name": "HD Pro Webcam" },
+  "expect": { "class": "video", "id": "0x1420000046d082d", "name": "HD Pro Webcam", "vidPid": "046d:082d" }
+}

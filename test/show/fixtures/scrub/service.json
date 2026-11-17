@@ -1,0 +1,12 @@
+{
+    "type": "rtmp_custom",
+    "settings": {
+        "server": "rtmp://relay.example.invalid/live",
+        "key": "FIXTURE-STREAM-KEY-0008",
+        "use_auth": true,
+        "username": "operator",
+        "password": "FIXTURE-SERVICE-PASSWORD-0009",
+        "bwtest": false
+    },
+    "extra": "dropped"
+}

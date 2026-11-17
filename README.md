@@ -17,7 +17,7 @@
 
 ## What it does
 
-- **CTD Live Source (SRT)** for feeds from [MediaMTX](https://github.com/bluenviron/mediamtx). It replaces the stock
+- **CTD Live Source** for feeds from [MediaMTX](https://github.com/bluenviron/mediamtx). It replaces the stock
   Media Source for phones, encoders and bonded cellular units: it never drifts behind live, holds the last frame and then
   shows a card when the signal drops, and reconnects by itself.
 - **CTD Hub dock:** every stream on your server, live first, with bitrate, link quality and one-click add to a scene.
@@ -42,7 +42,7 @@ The plugin is the OBS end of the CTD family:
 ## Set up in five minutes
 
 1. **Install** the plugin (below) and restart OBS.
-2. **Tools ▸ CTD Live servers…**: add your MediaMTX server (its address; the API URL `http://<address>:9997` if its
+2. **Tools ▸ CTD Hub servers…**: add your MediaMTX server (its address; the API URL `http://<address>:9997` if its
    API is on) and press **Test**.
 3. **Docks ▸ CTD Hub**: your streams appear, live first. Double-click one to add it to the current scene, or press
    **Add all live streams** for a grid.
@@ -65,7 +65,7 @@ system FFmpeg, like OBS does. Download the package for your platform from the [r
 | macOS (Apple silicon and Intel) | `ctd-live-source-<version>-macos-universal.pkg` | run the installer (see below while it's unsigned) |
 | Ubuntu 24.04 | `ctd-live-source-<version>-x86_64-linux-gnu.deb` | `sudo apt install ./ctd-live-source-<version>-x86_64-linux-gnu.deb` |
 
-Restart OBS. `[ctd-live] plugin loaded (version <version>)` in the log means it loaded.
+Restart OBS. `[CTD] live-source: plugin loaded (version <version>)` in the log means it loaded.
 
 The macOS package isn't signed by Apple yet, so macOS refuses to open it at first ("can't be opened because Apple
 cannot check it"). Open it anyway once: System Settings ▸ Privacy & Security ▸ **Open Anyway** (or Control-click the
@@ -91,7 +91,7 @@ The transport, demux and decode layers reuse the FFmpeg libraries OBS already sh
 the stock source speaks `srt://`). Only the policy layer is ours.
 ## Use
 
-**Sources ▸ + ▸ CTD Live Source (SRT)**. You never type a URL. The plugin
+**Sources ▸ + ▸ CTD Live Source**. You never type a URL. The plugin
 builds MediaMTX's SRT read URL (`streamid=read:<path>`) itself, so you only
 enter the server address and the path name.
 
@@ -122,7 +122,7 @@ At the bottom of the properties panel, the stats show:
 **Refresh stats** updates them. **Reconnect now** drops the connection and
 dials again straight away. Connects, reconnects (with reason), signal loss and
 its return, and resyncs are logged. Every line names its source
-(`[ctd-live:Cam 1] ...`), so a show with several feeds can be diagnosed after
+(`[CTD] live-source: Cam 1: ...`), so a show with several feeds can be diagnosed after
 the fact. A stream that isn't up yet is retried forever but logged quietly: its
 first failure, then one line a minute until it connects.
 
@@ -247,14 +247,16 @@ connect (`connected: video=h264 on d3d12va`).
 **Docks ▸ CTD Relay** connects OBS to CTD Relay (formerly CTD Multi-Stream; API v1.2 and later), the one service it
 talks to for everything after OBS:
 
-1. Type the server (e.g. `192.168.1.50:30080`) and press **Connect**. The dock shows a code. Approve it in CTD
+1. Type the server (e.g. `nas.local:30080`; there is no default) and press **Connect**. The dock shows a code. Approve it in CTD
    CTD Relay ▸ Settings ▸ API (**Open the approval page** takes you there); no token to copy.
-2. Pick the profile this OBS goes to (for example "Miami or Bust" or "DPRTMNT").
+2. Pick the profile this CTD OBS goes to (for example "Miami or Bust" or "DPRTMNT").
 3. The dock shows the profile's session (with the total watching across every platform), feed bitrates, every
    destination (red when down, with the reason) and the merged chat. "Joined" lines from Instagram and TikTok are
    dimmed.
-4. **Send OBS's stream to this profile…** sets OBS's stream server and key from the profile (never while
-   streaming; the key is shown masked). The vertical feed's URL is copied for Aitum Vertical.
+4. **Send CTD OBS's stream to this profile…** sets OBS's stream server and key from the profile (never while
+   streaming; the key is shown masked). In CTD OBS it also sets the built-in vertical canvas's stream (a "CTD
+   Relay" output) to the profile's vertical feed, so both feeds go live together. In stock OBS the vertical feed's
+   URL is copied for Aitum Vertical instead.
 5. **Overlays** lists the profile's overlays from CTD Overlay. **Add to current scene** creates a browser source at
    the overlay's size. After a profile change, **Switch existing to this profile** points those sources at the new
    profile's matching overlays (same slot and canvas), so the scenes carry over. Nothing is ever deleted.
@@ -267,7 +269,7 @@ talks to for everything after OBS:
 7. With API v1.3 the dock also shows the hub's shared timecode: run time since the session went live, UTC and the
    hub's local time, as `HH:MM:SS:FF`. It is synced to the hub over the network, so every app on the same hub reads
    the same time. Hover it to see how closely it is synced.
-8. With API v1.6, **Let CTD Live mobile control this OBS through CTD Relay** (off until you tick it) gives CTD
+8. With API v1.6, **Let CTD Live mobile control this CTD OBS through CTD Relay** (off until you tick it) gives CTD
    Relay OBS's WebSocket settings (Tools ▸ WebSocket Server Settings: port, password) and this PC's LAN address, so
    CTD Live mobile can switch scenes and start or stop the stream through the hub. The plugin re-reads them every
    30 s and sends them again when they change (and every 5 minutes anyway). Unticking tells CTD Relay to forget the
@@ -288,7 +290,7 @@ affects the video sources.
 
 ### Server profiles
 
-**Tools ▸ CTD Live servers…** keeps the MediaMTX servers your sources read from, so each address and login is typed
+**Tools ▸ CTD Hub servers…** keeps the MediaMTX servers your sources read from, so each address and login is typed
 once and every scene collection shares it. A profile holds a name, the address, the SRT port, the API URL
 (`http://<address>:9997`, blank for none), an API login or token, an SRT read login and an SRT passphrase. **Test**
 asks the API for its streams. A first run starts with "This computer" (`127.0.0.1`).
@@ -415,7 +417,7 @@ Lower the drift cap for tighter sync at the cost of more visible snaps; raise
 it if the upstream link is bad enough that snapping is more distracting than
 lateness.
 
-For just the sound of a feed, use **Sources ▸ + ▸ CTD Live Audio (SRT)**. It has
+For just the sound of a feed, use **Sources ▸ + ▸ CTD Live Audio**. It has
 the same settings and behaviour, but it is an audio input: it shows up in the
 audio mixer, takes no space on the canvas, and never decodes the video, so it
 costs almost nothing beyond the audio itself.
@@ -454,7 +456,7 @@ cmake --install build_macos --config RelWithDebInfo --prefix release
 
 **Ubuntu 24.04**, with `obs-studio` from `ppa:obsproject/obs-studio`, plus
 `cmake ninja-build pkg-config build-essential libsimde-dev libavcodec-dev
-libavformat-dev libavutil-dev libswresample-dev libswscale-dev`:
+libavformat-dev libavutil-dev libswresample-dev libswscale-dev libcurl4-openssl-dev`:
 
 ```bash
 cmake --preset ubuntu-x86_64 -DCMAKE_INSTALL_PREFIX=/usr
@@ -491,7 +493,7 @@ correction, fps, audio rate, resyncs and reconnects every second (`--json` for o
 as `--live-within 3`, `--max-gap 6`, `--max-lateness 700` and `--monotonic` make it exit with code 2 when broken.
 
 ```bash
-ctd-live-probe --host 192.168.1.50 --port 8890 --path mob944 --seconds 60
+ctd-live-probe --host 192.0.2.10 --port 8890 --path mob944 --seconds 60
 ```
 
 Build it with the plugin by adding `-DENABLE_PROBE=ON` to the configure step, or on its own against the system FFmpeg

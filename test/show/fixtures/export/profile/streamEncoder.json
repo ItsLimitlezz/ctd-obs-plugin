@@ -1,0 +1,6 @@
+{
+    "bitrate": 6000,
+    "keyint_sec": 2,
+    "preset": "veryfast",
+    "rate_control": "CBR"
+}

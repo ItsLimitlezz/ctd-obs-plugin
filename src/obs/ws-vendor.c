@@ -530,7 +530,7 @@ static void add_feed_to_scene(obs_data_t *request, obs_data_t *response, void *p
 			obs_sceneitem_set_bounds(item, &bounds);
 		}
 		ok = item != NULL;
-		blog(LOG_INFO, "[ctd-live] obs-websocket: added '%s' to '%s'", name.array,
+		blog(LOG_INFO, "[CTD] live-source: obs-websocket: added '%s' to '%s'", name.array,
 		     obs_source_get_name(scene_source));
 		obs_source_release(source);
 	}
@@ -617,7 +617,7 @@ void ws_vendor_register(void)
 {
 	ws_ph = websocket_ph();
 	if (!ws_ph) {
-		blog(LOG_INFO, "[ctd-live] obs-websocket isn't loaded: no \"ctd\" vendor requests");
+		blog(LOG_INFO, "[CTD] live-source: obs-websocket isn't loaded: no \"ctd\" vendor requests");
 		return;
 	}
 	calldata_t cd = {0};
@@ -626,7 +626,7 @@ void ws_vendor_register(void)
 	ws_vendor = calldata_ptr(&cd, "vendor");
 	calldata_free(&cd);
 	if (!ws_vendor) {
-		blog(LOG_WARNING, "[ctd-live] couldn't register the obs-websocket vendor \"ctd\"");
+		blog(LOG_WARNING, "[CTD] live-source: couldn't register the obs-websocket vendor \"ctd\"");
 		return;
 	}
 	const bool ok = register_request("GetServers", get_servers) && register_request("GetStreams", get_streams) &&
@@ -645,7 +645,7 @@ void ws_vendor_register(void)
 			register_request("ApplySyncCheck", apply_sync_check) &&
 			register_request("SetSyncGroup", set_sync_group) && register_request("GetIssues", get_issues) &&
 			register_request("ApplyFix", apply_fix);
-	blog(ok ? LOG_INFO : LOG_WARNING, "[ctd-live] obs-websocket vendor \"ctd\" %s",
+	blog(ok ? LOG_INFO : LOG_WARNING, "[CTD] live-source: obs-websocket vendor \"ctd\" %s",
 	     ok ? "registered" : "partly registered");
 }
 

@@ -1,0 +1,1 @@
+{ "sourceType": "dshow_input", "settings": {}, "expect": { "class": "video", "id": "", "name": "", "vidPid": "", "serial": "" } }

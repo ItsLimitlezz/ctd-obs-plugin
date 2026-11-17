@@ -1,0 +1,173 @@
+{
+    "schema": 1,
+    "showProfileId": "22222222-2222-4222-8222-222222222222",
+    "relayProfileId": null,
+    "name": "DPRTMNT",
+    "revision": 0,
+    "parentRevision": 0,
+    "savedAt": "",
+    "savedBy": {
+        "appId": "ctd-obs-plugin-studio",
+        "os": "windows"
+    },
+    "versions": {
+        "obs": "33.0.1",
+        "ctdObs": "1.2.3",
+        "plugin": "0.1.0"
+    },
+    "files": {
+        "collection": "collection.json",
+        "profile": [
+            "profile/basic.ini",
+            "profile/streamEncoder.json",
+            "profile/service.json"
+        ]
+    },
+    "assets": [
+        {
+            "sha256": "63acd0a848324f9632fbbe0fb584689b050d1a7423065c824cdd26263a7d7a55",
+            "size": 20,
+            "kind": "image",
+            "name": "logo.png",
+            "refs": [
+                {
+                    "source": "11111111-0000-4000-8000-000000000002",
+                    "filter": null,
+                    "key": "/settings/file"
+                },
+                {
+                    "source": "11111111-0000-4000-8000-000000000003",
+                    "filter": null,
+                    "key": "/settings/file"
+                }
+            ]
+        },
+        {
+            "sha256": "1ea99a5e2c2478f99cf4057da1375695c62942f1d377754dd9f0bb0cd556ddef",
+            "size": 21,
+            "kind": "video",
+            "name": "intro.mp4",
+            "refs": [
+                {
+                    "source": "11111111-0000-4000-8000-000000000004",
+                    "filter": null,
+                    "key": "/settings/local_file"
+                }
+            ]
+        },
+        {
+            "sha256": "389c9ee2b8c272ff5927e6741b1d2d849ec37cfff0a65cea025491fa3ba71e55",
+            "size": 21,
+            "kind": "lut",
+            "name": "warm.cube",
+            "refs": [
+                {
+                    "source": "11111111-0000-4000-8000-000000000005",
+                    "filter": "11111111-0000-4000-8000-0000000000a1",
+                    "key": "/settings/image_path"
+                }
+            ]
+        },
+        {
+            "sha256": "333a424a80ac2be824825d8eb636720f7d8fee2652b093b12db5035085c0b374",
+            "size": 27,
+            "kind": "html",
+            "name": "lowerthird.html",
+            "refs": [
+                {
+                    "source": "11111111-0000-4000-8000-000000000006",
+                    "filter": null,
+                    "key": "/settings/local_file"
+                }
+            ]
+        },
+        {
+            "sha256": "9dc4f657681007adbc5f83fa2d8f3c32170d59427a1ede93a7f3a749803eed31",
+            "size": 22,
+            "kind": "audio",
+            "name": "track1.mp3",
+            "refs": [
+                {
+                    "source": "11111111-0000-4000-8000-000000000008",
+                    "filter": null,
+                    "key": "/settings/playlist/0/value"
+                }
+            ]
+        },
+        {
+            "sha256": "811cfc79fedd1a6062d06f05e27545e3d645d6549f8903aad6ec80abd7b47a5c",
+            "size": 22,
+            "kind": "audio",
+            "name": "track2.mp3",
+            "refs": [
+                {
+                    "source": "11111111-0000-4000-8000-000000000008",
+                    "filter": null,
+                    "key": "/settings/playlist/1/value"
+                }
+            ]
+        },
+        {
+            "sha256": "4b5a1dfe9a6815136a7e99f90d2946dcefe03de755617d07132b2ccc411ae894",
+            "size": 23,
+            "kind": "video",
+            "name": "stinger.mov",
+            "refs": [
+                {
+                    "source": "11111111-0000-4000-8000-0000000000b1",
+                    "filter": null,
+                    "key": "/settings/path"
+                }
+            ]
+        }
+    ],
+    "devices": [
+        {
+            "slot": "11111111-0000-4000-8000-000000000005",
+            "sourceType": "dshow_input",
+            "class": "video",
+            "identity": {
+                "name": "Cam Link 4K",
+                "id": "Cam Link 4K:\\\\?\\usb#vid_0fd9&pid_0066&mi_00#6&1a2b&0&0000#{65e8773d-8f56-11d0-a3b9-00a0c9223196}",
+                "vidPid": "0fd9:0066",
+                "serial": "6&1a2b&0&0000"
+            },
+            "label": "Camera"
+        },
+        {
+            "slot": "11111111-0000-4000-8000-00000000000b",
+            "sourceType": "wasapi_input_capture",
+            "class": "audio",
+            "identity": {
+                "id": "{0.0.1.00000000}.{11111111-2222-4333-8444-555555555555}"
+            },
+            "label": "Mic"
+        },
+        {
+            "slot": "11111111-0000-4000-8000-0000000000c1",
+            "sourceType": "wasapi_output_capture",
+            "class": "audio",
+            "identity": {
+                "id": "default"
+            },
+            "label": "Desktop Audio"
+        },
+        {
+            "slot": "11111111-0000-4000-8000-0000000000c2",
+            "sourceType": "wasapi_input_capture",
+            "class": "audio",
+            "identity": {
+                "id": "{0.0.1.00000000}.{66666666-7777-4888-8999-aaaaaaaaaaaa}"
+            },
+            "label": "Mic/Aux"
+        }
+    ],
+    "overlays": [
+        {
+            "source": "11111111-0000-4000-8000-000000000007",
+            "slot": "chat-box",
+            "canvas": "landscape"
+        }
+    ],
+    "secrets": []
+}

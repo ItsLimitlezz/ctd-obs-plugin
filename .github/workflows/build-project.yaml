@@ -175,9 +175,12 @@ jobs:
           path: ${{ github.workspace }}/.ccache
           key: ${{ runner.os }}-ccache-${{ needs.check-event.outputs.config }}
 
+  # The full smoke test runs on Intel: on GitHub's arm64 macOS images (from November 2026) OBS 32.2.2 itself crashes
+  # while loading the scene collection, with or without this plugin (issue #30). The arm64 job below still checks that
+  # the arm64 slice installs and loads, and runs the full test again as soon as OBS stops crashing there.
   macos-smoke:
     name: Test in OBS for macOS 🍏
-    runs-on: macos-26
+    runs-on: macos-15-intel
     needs: [check-event, macos-build]
     timeout-minutes: 20
     steps:
@@ -197,6 +200,33 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-smoke-${{ needs.check-event.outputs.commitHash }}
+          path: test/out/macos/
+          if-no-files-found: ignore
+
+  macos-smoke-arm64:
+    name: Test in OBS for macOS 🍏 (arm64)
+    runs-on: macos-26
+    needs: [check-event, macos-build]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-macos-universal-${{ needs.check-event.outputs.commitHash }}'
+          path: ${{ runner.temp }}/plugin
+          merge-multiple: true
+
+      - name: Run OBS with the plugin 🧪
+        env:
+          SMOKE_ALLOW_RUNNER_CRASH: '1'
+        run: bash test/macos-smoke.sh "$(find "${{ runner.temp }}/plugin" -type f | head -n 1)"
+
+      - name: Keep the screenshots and logs 📄
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-smoke-arm64-${{ needs.check-event.outputs.commitHash }}
           path: test/out/macos/
           if-no-files-found: ignore
 

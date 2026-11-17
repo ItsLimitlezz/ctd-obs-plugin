@@ -1,0 +1,5 @@
+{
+  "sourceType": "av_capture_input_v2",
+  "settings": { "device": "0x142000000fd90066", "device_name": "Cam Link 4K" },
+  "expect": { "class": "video", "id": "0x142000000fd90066", "name": "Cam Link 4K", "vidPid": "0fd9:0066", "serial": "" }
+}

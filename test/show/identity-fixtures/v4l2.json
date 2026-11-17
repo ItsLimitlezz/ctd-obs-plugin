@@ -1,0 +1,1 @@
+{ "sourceType": "v4l2_input", "settings": { "device_id": "/dev/video2" }, "expect": { "class": "video", "id": "/dev/video2", "name": "" } }

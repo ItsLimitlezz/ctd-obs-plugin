@@ -24,6 +24,11 @@ find_package(FFmpeg REQUIRED COMPONENTS swresample swscale)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE FFmpeg::avcodec FFmpeg::avformat FFmpeg::avutil)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE FFmpeg::swresample FFmpeg::swscale)
 
+# libcurl for streaming file transfers to and from CTD Relay (Show Profiles, docs/show-profiles-s2.md). Also the copy OBS
+# runs with: obs-deps' libcurl.dll (Schannel) on Windows, the SDK's on macOS, the system's on Linux. Nothing is bundled.
+find_package(CURL REQUIRED)
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE CURL::libcurl)
+
 if(ENABLE_FRONTEND_API)
   find_package(obs-frontend-api REQUIRED)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::obs-frontend-api)
@@ -62,11 +67,52 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/issues.c src/obs/sync-group
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/obs-watch.c src/obs/servers.c src/ui/servers-dialog.cpp)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/http-client.c src/multistream.c src/ui/multistream-dock.cpp)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obsws-config.c src/obs/discovery.c src/ui/discovery-menu.cpp)
+# Show Profiles (design: hub epics/show-profiles-design.md). The pure-logic files are shared with ctd-show-tests.
+set(
+  CTD_SHOW_PURE_SOURCES
+  src/show/assets.c
+  src/show/bundle.c
+  src/show/devices-identity.c
+  src/show/devices.c
+  src/show/export.c
+  src/show/ini.c
+  src/show/json.c
+  src/show/manifest.c
+  src/show/scrub.c
+  src/show/sha256.c
+  src/show/show-fs.c
+  src/show/store.c
+  src/show/sync-core.c
+  src/show/sync-flow.c
+  src/show/tar.c
+)
+target_sources(
+  ${CMAKE_PROJECT_NAME}
+  PRIVATE ${CTD_SHOW_PURE_SOURCES} src/show/apply.c src/show/device-map.c src/show/show.c src/show/sync.c
+)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/device-map-dialog.cpp src/ui/show-section.cpp)
 if(WIN32)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32 bcrypt)
 endif()
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
+
+# Show Profiles encoder fallback (ticket T15): pure C, no libobs, plus its tests. The tests are not part of "all"; build
+# the target, then run ctest:
+#   cmake --build --preset <preset> --target ctd-encoder-fallback-tests && ctest --test-dir <build dir> -C RelWithDebInfo
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/show/encoder-fallback.c)
+enable_testing()
+add_executable(ctd-encoder-fallback-tests EXCLUDE_FROM_ALL)
+target_sources(ctd-encoder-fallback-tests PRIVATE test/show/encoder-fallback-test.c src/show/encoder-fallback.c)
+add_test(NAME ctd-encoder-fallback-tests COMMAND ctd-encoder-fallback-tests)
+
+# Show Profiles library mirror (ticket T14): LUTs from the profile's CTD Relay library, cached in the plugin's config
+# folder and in the show-profile asset cache. library-plan.c is pure C (no libobs) and has its own tests:
+#   cmake --build --preset <preset> --target ctd-library-tests && ctest --test-dir <build dir> -C RelWithDebInfo
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/show/library-mirror.c src/show/library-plan.c)
+add_executable(ctd-library-tests EXCLUDE_FROM_ALL)
+target_sources(ctd-library-tests PRIVATE test/show/library-test.c src/show/library-plan.c)
+add_test(NAME ctd-library-tests COMMAND ctd-library-tests)
 
 # ctd-live-probe (SPEC E5): the engine on the command line, for the test harness
 option(ENABLE_PROBE "Build the ctd-live-probe command-line tool" OFF)
@@ -86,3 +132,9 @@ if(ENABLE_PROBE)
     target_link_libraries(ltc-gen PRIVATE m)
   endif()
 endif()
+
+# Show Profiles pure-logic tests (tickets T6, T7, T9, T10): C only, no libobs. Not part of "all"; build the target, then
+# run ctest. test/show/CMakeLists.txt also builds on its own (CI: .github/workflows/show-tests.yaml).
+#   cmake --build --preset <preset> --target ctd-show-tests && ctest --test-dir <build dir> -C RelWithDebInfo
+enable_testing()
+add_subdirectory(test/show)

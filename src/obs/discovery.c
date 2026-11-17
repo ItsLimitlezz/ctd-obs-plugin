@@ -270,7 +270,7 @@ static void *discovery_thread(void *unused)
 	char why[160] = "";
 	const bool available = platform_init(why, sizeof(why));
 	if (!available)
-		blog(LOG_INFO, "[ctd-live] network discovery: %s", why);
+		blog(LOG_INFO, "[CTD] discovery: %s", why);
 
 	void *handle = NULL;
 	struct announcement current = {0};
@@ -289,16 +289,16 @@ static void *discovery_thread(void *unused)
 			if (handle) {
 				current = next;
 				blog(LOG_INFO,
-				     "[ctd-live] network discovery: CTD apps on the network can find this OBS as \"%s\" "
+				     "[CTD] discovery: CTD apps on the network can find this OBS as \"%s\" "
 				     "(%s, WebSocket port %d%s)",
 				     name, next.address, next.port, next.auth ? ", password needed" : "");
 				logged[0] = '\0';
 			} else if (strcmp(logged, why) != 0) {
-				blog(LOG_WARNING, "[ctd-live] network discovery: %s", why);
+				blog(LOG_WARNING, "[CTD] discovery: %s", why);
 				snprintf(logged, sizeof(logged), "%s", why);
 			}
 		} else if (!want && strcmp(logged, reason) != 0) {
-			blog(LOG_INFO, "[ctd-live] network discovery: not announcing this OBS: %s", reason);
+			blog(LOG_INFO, "[CTD] discovery: not announcing this OBS: %s", reason);
 			snprintf(logged, sizeof(logged), "%s", reason);
 		}
 		os_event_timedwait(disc.wake, CHECK_MS);

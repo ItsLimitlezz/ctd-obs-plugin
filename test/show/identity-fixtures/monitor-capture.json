@@ -1,0 +1,1 @@
+{ "sourceType": "monitor_capture", "settings": { "monitor_id": "\\\\?\\DISPLAY#TST0001#5&0&UID1" }, "expect": { "class": "display", "id": "\\\\?\\DISPLAY#TST0001#5&0&UID1" } }

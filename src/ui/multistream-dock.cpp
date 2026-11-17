@@ -8,6 +8,7 @@
  */
 
 #include <obs-frontend-api.h>
+#include <util/config-file.h>
 #include <obs-module.h>
 #include <util/platform.h>
 
@@ -38,8 +39,15 @@
 
 #include "../multistream.h"
 #include "icons.hpp"
+#include "show-section.hpp"
 
 namespace {
+
+/* user-visible text, from data/locale */
+QString uiText(const char *key)
+{
+	return QString::fromUtf8(obs_module_text(key));
+}
 
 /* the private settings keys that mark a browser source as one of the hub's overlays (H21) */
 constexpr const char *kOverlaySlot = "ctd_overlay_slot";
@@ -76,6 +84,120 @@ QString overlaySlot(obs_data_t *overlay)
 QString maskKey(const QString &key)
 {
 	return key.size() <= 6 ? QString("••••••") : key.left(6) + "••••••";
+}
+
+/* a host only reachable on its own network: loopback, RFC 1918, link-local, CGNAT, *.local, bare names */
+bool isLanHost(const QString &host)
+{
+	const QString h = host.trimmed().toLower();
+	if (h.isEmpty() || h == "localhost" || h.endsWith(".local") || h.endsWith(".lan") || h.endsWith(".home.arpa"))
+		return true;
+	const QStringList parts = h.split('.');
+	if (parts.size() == 4) {
+		int o[4];
+		for (int i = 0; i < 4; i++) {
+			bool ok = false;
+			o[i] = parts[i].toInt(&ok);
+			if (!ok || o[i] < 0 || o[i] > 255)
+				return false; /* a DNS name with four labels */
+		}
+		if (o[0] == 10 || o[0] == 127)
+			return true;
+		if (o[0] == 172 && o[1] >= 16 && o[1] <= 31)
+			return true;
+		if ((o[0] == 192 && o[1] == 168) || (o[0] == 169 && o[1] == 254))
+			return true;
+		return o[0] == 100 && o[1] >= 64 && o[1] <= 127;
+	}
+	if (h.contains(':')) {
+		/* IPv6; QUrl::host() gives it without brackets */
+		const QString v6 = QString(h).remove('[').remove(']');
+		return v6 == "::1" || v6.startsWith("fe80:") || v6.startsWith("fc") || v6.startsWith("fd");
+	}
+	return !h.contains('.'); /* a bare machine name, e.g. "nas" */
+}
+
+/* CTD Relay can hand back its LAN address (LAN_HTTP_HOST) even when this OBS reaches it through a public address,
+ * and that LAN IP is unreachable from another network. When the ingest host is a LAN address and the Relay address
+ * typed in the dock isn't, keep the RTMP port and path but use the Relay's host. Returns the server unchanged
+ * otherwise. */
+QString reachableIngestServer(const QString &server, const QString &relayAddress)
+{
+	QUrl ingest(server);
+	const QUrl relay = QUrl::fromUserInput(relayAddress.trimmed());
+	if (!ingest.isValid() || ingest.host().isEmpty() || !relay.isValid() || relay.host().isEmpty())
+		return server;
+	if (!isLanHost(ingest.host()) || isLanHost(relay.host()) || ingest.host() == relay.host())
+		return server;
+	ingest.setHost(relay.host());
+	return ingest.toString();
+}
+
+/* The vertical canvas built into CTD OBS (ctd-vertical-canvas) lets other plugins set its stream output through these
+ * procs. Stock OBS and Aitum's own plugins don't have them. */
+bool ctdVerticalCanvasAvailable()
+{
+	calldata_t cd = {};
+	const bool found = proc_handler_call(obs_get_proc_handler(), "ctd_vertical_get_output", &cd);
+	calldata_free(&cd);
+	return found;
+}
+
+/* True while the vertical canvas's stream is running (CTD OBS reports it as "active"; false when not detectable). */
+bool ctdVerticalStreaming()
+{
+	calldata_t cd = {};
+	const bool active = proc_handler_call(obs_get_proc_handler(), "ctd_vertical_get_output", &cd) &&
+			    calldata_bool(&cd, "active");
+	calldata_free(&cd);
+	return active;
+}
+
+/* Sets the vertical canvas's stream output (custom RTMP) and saves it; no dialog. False with a reason on failure. */
+bool setCtdVerticalOutput(const QString &server, const QString &key, QString &error)
+{
+	calldata_t cd = {};
+	calldata_set_string(&cd, "server", server.toUtf8().constData());
+	calldata_set_string(&cd, "key", key.toUtf8().constData());
+	bool ok = false;
+	if (!proc_handler_call(obs_get_proc_handler(), "ctd_vertical_set_output", &cd)) {
+		error = uiText("Relay.VerticalNotLoaded");
+	} else {
+		ok = calldata_bool(&cd, "success");
+		error = QString::fromUtf8(calldata_string(&cd, "error"));
+	}
+	calldata_free(&cd);
+	return ok;
+}
+
+/* OBS's own Twitch "Dual Format" / Enhanced Broadcasting (multitrack video) sends straight to Twitch from OBS, so a
+ * stream to CTD Relay isn't what goes out. */
+bool obsMultitrackEnabled()
+{
+	config_t *profile = obs_frontend_get_profile_config();
+	return profile && config_get_bool(profile, "Stream1", "EnableMultitrackVideo");
+}
+
+/* Keyframe interval 2 s on the main stream encoder (Relay warns about long keyframes). Only the keyint_sec of the
+ * advanced-output encoder is touched; simple output already uses 2 s. Returns true when the setting is now 2 s. */
+bool setMainKeyframe2s()
+{
+	config_t *profile = obs_frontend_get_profile_config();
+	const char *mode = profile ? config_get_string(profile, "Output", "Mode") : nullptr;
+	if (!mode || std::string(mode) != "Advanced")
+		return false;
+	char *dir = obs_frontend_get_current_profile_path();
+	if (!dir)
+		return false;
+	const std::string path = std::string(dir) + "/streamEncoder.json";
+	bfree(dir);
+	obs_data_t *enc = obs_data_create_from_json_file_safe(path.c_str(), "bak");
+	if (!enc)
+		enc = obs_data_create();
+	obs_data_set_int(enc, "keyint_sec", 2);
+	const bool ok = obs_data_save_json_safe(enc, path.c_str(), "tmp", "bak");
+	obs_data_release(enc);
+	return ok;
 }
 
 /* The vertical canvas Aitum Stream Suite (or anything else) made with OBS's canvas API: the first canvas other than
@@ -128,18 +250,22 @@ void wrapLines(QListWidget *list)
 
 class MultiStreamDock : public QWidget {
 public:
+	~MultiStreamDock() override { obs_frontend_remove_event_callback(frontendEvent, this); }
+
 	explicit MultiStreamDock(QWidget *parent) : QWidget(parent)
 	{
 		ctd::applyTheme(this);
-		auto *layout = new QVBoxLayout(this);
-		layout->setSpacing(8);
-		layout->addLayout(ctdHeader(this, "relay-64.png", "CTD Relay"));
+		/* scrolls instead of squashing, so the dock fits (and docks into) any area */
+		auto *layout = new QVBoxLayout(ctd::scrollBody(this));
+		layout->setSpacing(10);
+		layout->addLayout(ctdHeader(this, "relay-64.png", uiText("Relay.Title")));
 
 		/* connection (H18) */
 		auto *connection = new QHBoxLayout();
 		server_ = new QLineEdit(this);
-		server_->setPlaceholderText(MS_DEFAULT_SERVER);
-		connect_ = ctd::button(new QPushButton("Connect", this)); /* also Disconnect: never the bright one */
+		server_->setPlaceholderText(MS_SERVER_EXAMPLE);
+		connect_ = ctd::button(
+			new QPushButton(uiText("Relay.Connect"), this)); /* also Disconnect: never the bright one */
 		connection->addWidget(server_, 1);
 		connection->addWidget(connect_);
 		layout->addLayout(connection);
@@ -150,20 +276,27 @@ public:
 		action_->setWordWrap(true);
 		action_->setProperty("ctdRole", "muted");
 		layout->addWidget(action_);
-		approve_ = ctd::button(new QPushButton("Open the approval page →", this), ctd::Role::Primary);
+		multitrackWarning_ = new QLabel(uiText("Relay.MultitrackWarning"), this);
+		multitrackWarning_->setWordWrap(true);
+		multitrackWarning_->setStyleSheet("color: #e5a50a; font-weight: bold;");
+		multitrackWarning_->hide();
+		layout->addWidget(multitrackWarning_);
+		approve_ = ctd::button(new QPushButton(uiText("Relay.OpenApproval"), this), ctd::Role::Primary);
 		layout->addWidget(approve_);
 
 		/* profile (H19) */
 		auto *profileRow = new QFormLayout();
 		profile_ = new QComboBox(this);
-		profileRow->addRow("This OBS goes to", profile_);
+		/* a long profile name shortens in the box rather than widening the dock */
+		profile_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+		profile_->setMinimumContentsLength(10);
+		profileRow->setRowWrapPolicy(QFormLayout::WrapLongRows);
+		profileRow->addRow(uiText("Relay.ProfileRow"), profile_);
 		layout->addLayout(profileRow);
 		/* API v1.6: CTD Live mobile reaches OBS through the hub, only when the user says so (it shares a password) */
-		shareObsws_ = new QCheckBox("Let CTD Live mobile control this OBS through CTD Relay", this);
-		shareObsws_->setToolTip(
-			"Sends OBS's WebSocket settings (Tools > WebSocket Server Settings), password "
-			"included, to CTD Relay, and keeps them current. Untick to make CTD Relay forget them.");
-		layout->addWidget(shareObsws_);
+		shareObsws_ = new QCheckBox(this);
+		shareObsws_->setToolTip(uiText("Relay.ShareObsws.Tooltip"));
+		layout->addLayout(ctd::wrappingCheckBox(shareObsws_, uiText("Relay.ShareObsws"), this));
 		shareStatus_ = new QLabel(this);
 		shareStatus_->setWordWrap(true);
 		layout->addWidget(shareStatus_);
@@ -177,46 +310,63 @@ public:
 		clock_->hide();
 		layout->addWidget(clock_);
 
+		/* show profiles (T12): hidden on stock OBS */
+		showProfiles_ = new ShowProfilesSection(this);
+		layout->addWidget(showProfiles_);
+
 		/* destinations and alerts (H20, H23, H25) */
-		auto *destinationsBox = new QGroupBox("Destinations", this);
+		auto *destinationsBox = new QGroupBox(uiText("Relay.Destinations"), this);
 		auto *destinationsLayout = new QVBoxLayout(destinationsBox);
+		destinationsLayout->setSpacing(8);
 		destinations_ = new QListWidget(destinationsBox);
-		destinations_->setMinimumHeight(120);
+		destinations_->setMinimumHeight(96);
 		wrapLines(destinations_);
-		destinationsLayout->addWidget(destinations_);
+		destinationsLayout->addWidget(destinations_, 1);
 		alerts_ = new QListWidget(destinationsBox);
+		alerts_->setMinimumHeight(48);
 		alerts_->setMaximumHeight(110);
 		wrapLines(alerts_);
 		destinationsLayout->addWidget(alerts_);
-		route_ = new QPushButton("Send OBS's stream to this profile →", destinationsBox);
+		route_ = new QPushButton(uiText("Relay.Route"), destinationsBox);
 		ctd::button(route_, ctd::Role::Primary);
+		/* room for the primary button's 3 px offset shadow, so it never sits on the list above or the frame below */
+		destinationsLayout->addSpacing(4);
 		destinationsLayout->addWidget(route_);
+		routeReason_ = new QLabel(uiText("Relay.StopStreamingReason"), destinationsBox);
+		routeReason_->setWordWrap(true);
+		routeReason_->setVisible(false);
+		destinationsLayout->addWidget(routeReason_);
+		destinationsLayout->addSpacing(3);
 		ctd::eyebrowTitle(destinationsBox);
-		layout->addWidget(destinationsBox);
+		layout->addWidget(destinationsBox, 1);
 
 		/* overlays (H21, H22) */
-		auto *overlaysBox = new QGroupBox("Overlays", this);
+		auto *overlaysBox = new QGroupBox(uiText("Relay.Overlays"), this);
 		auto *overlaysLayout = new QVBoxLayout(overlaysBox);
+		overlaysLayout->setSpacing(8);
 		overlays_ = new QListWidget(overlaysBox);
 		overlays_->setMinimumHeight(70);
-		overlaysLayout->addWidget(overlays_);
-		auto *overlayButtons = new QHBoxLayout();
-		addOverlay_ = new QPushButton("Add to its canvas", overlaysBox);
-		switchOverlays_ = new QPushButton("Switch existing to this profile", overlaysBox);
+		wrapLines(overlays_);
+		overlaysLayout->addWidget(overlays_, 1);
+		/* stacked, not side by side, so the dock stays narrow enough for a side dock area */
+		auto *overlayButtons = new QVBoxLayout();
+		overlayButtons->setSpacing(6);
+		addOverlay_ = new QPushButton(uiText("Relay.AddOverlay"), overlaysBox);
+		switchOverlays_ = new QPushButton(uiText("Relay.SwitchOverlays"), overlaysBox);
 		ctd::button(addOverlay_);
 		ctd::button(switchOverlays_);
 		overlayButtons->addWidget(addOverlay_);
 		overlayButtons->addWidget(switchOverlays_);
 		overlaysLayout->addLayout(overlayButtons);
-		auto *askRow = new QHBoxLayout();
 		template_ = new QLineEdit(overlaysBox);
-		template_->setPlaceholderText("CTD Overlay template, e.g. takeover");
+		template_->setPlaceholderText(uiText("Relay.TemplatePlaceholder"));
 		askCanvas_ = new QComboBox(overlaysBox);
 		askCanvas_->addItem("landscape");
 		askCanvas_->addItem("vertical");
-		ask_ = new QPushButton("Ask CTD Overlay", overlaysBox);
-		askRow->addWidget(template_, 1);
-		askRow->addWidget(askCanvas_);
+		ask_ = new QPushButton(uiText("Relay.Ask"), overlaysBox);
+		overlaysLayout->addWidget(template_);
+		auto *askRow = new QHBoxLayout();
+		askRow->addWidget(askCanvas_, 1);
 		ctd::button(ask_);
 		askRow->addWidget(ask_);
 		overlaysLayout->addLayout(askRow);
@@ -228,11 +378,12 @@ public:
 		layout->addWidget(overlaysBox);
 
 		/* chat (H24) */
-		auto *chatBox = new QGroupBox("Chat", this);
+		auto *chatBox = new QGroupBox(uiText("Relay.Chat"), this);
 		auto *chatLayout = new QVBoxLayout(chatBox);
+		chatLayout->setSpacing(8);
 		chat_ = new QTextBrowser(chatBox);
 		chat_->setOpenExternalLinks(true);
-		chat_->setMinimumHeight(120);
+		chat_->setMinimumHeight(100);
 		chatLayout->addWidget(chat_);
 		ctd::eyebrowTitle(chatBox);
 		layout->addWidget(chatBox, 1);
@@ -247,28 +398,37 @@ public:
 			ms_set_profile(profile_->itemData(index).toString().toUtf8().constData());
 		});
 		QObject::connect(route_, &QPushButton::clicked, this, [this] {
+			if (streamingBlocked()) {
+				updateRoute();
+				QMessageBox::information(this, uiText("Common.DialogTitle"),
+							 uiText("Relay.StopStreamingReason"));
+				return;
+			}
 			wantIngest_ = true;
 			ms_request_ingest();
-			route_->setEnabled(false);
+			updateRoute();
 		});
 		QObject::connect(addOverlay_, &QPushButton::clicked, this, [this] {
 			obs_data_t *overlay = selectedOverlay();
 			if (overlay)
 				addOverlay(overlay);
 			else
-				QMessageBox::information(this, "CTD Relay", "Pick an overlay in the list first.");
+				QMessageBox::information(this, uiText("Common.DialogTitle"),
+							 uiText("Relay.PickOverlayFirst"));
 		});
 		QObject::connect(switchOverlays_, &QPushButton::clicked, this, [this] { switchOverlays(); });
 		QObject::connect(ask_, &QPushButton::clicked, this, [this] {
 			const QString name = template_->text().trimmed();
 			if (name.isEmpty()) {
-				QMessageBox::information(this, "CTD Relay", "Type the CTD Overlay template to use.");
+				QMessageBox::information(this, uiText("Common.DialogTitle"),
+							 uiText("Relay.TypeTemplate"));
 				return;
 			}
 			wantCreated_ = true;
 			ms_request_overlay(name.toUtf8().constData(), askCanvas_->currentText().toUtf8().constData());
 		});
 
+		obs_frontend_add_event_callback(frontendEvent, this);
 		auto *timer = new QTimer(this);
 		QObject::connect(timer, &QTimer::timeout, this, [this] { refresh(); });
 		timer->start(500);
@@ -288,7 +448,14 @@ private:
 		if (linked) {
 			ms_disconnect();
 		} else {
-			ms_set_server(server_->text().trimmed().toUtf8().constData());
+			const QString server = server_->text().trimmed();
+			if (server.isEmpty()) {
+				/* there is no default server: pairing without one would wait forever */
+				action_->setText(uiText("Relay.TypeAddressFirst").arg(MS_SERVER_EXAMPLE));
+				server_->setFocus();
+				return;
+			}
+			ms_set_server(server.toUtf8().constData());
 			ms_start_pairing();
 		}
 	}
@@ -297,21 +464,14 @@ private:
 	{
 		if (on) {
 			const QString server = server_->text().trimmed();
-			QString detail =
-				QString("CTD Relay (%1) gets OBS's WebSocket password and this PC's address, so CTD "
-					"Live mobile can switch scenes and start or stop the stream through it. "
-					"Anyone who can sign in to CTD Relay can then control this OBS.")
-					.arg(server.isEmpty() ? QString(MS_DEFAULT_SERVER) : server);
+			QString detail = uiText("Relay.Share.Detail")
+						 .arg(server.isEmpty() ? uiText("Relay.Share.ThisServer") : server);
 			if (server.startsWith("https://", Qt::CaseInsensitive))
-				detail +=
-					"\n\nThe address is https://, so the password travels encrypted, to a server whose "
-					"certificate this PC trusts.";
+				detail += "\n\n" + uiText("Relay.Share.Https");
 			else
-				detail +=
-					"\n\nThe address doesn't start with https://, so the password crosses the network "
-					"unencrypted. Only do this on a network you trust, or connect to CTD Relay's https:// "
-					"address instead.";
-			if (QMessageBox::question(this, "CTD Relay", detail + "\n\nShare OBS's WebSocket settings?") !=
+				detail += "\n\n" + uiText("Relay.Share.Http");
+			if (QMessageBox::question(this, uiText("Common.DialogTitle"),
+						  detail + "\n\n" + uiText("Relay.Share.Question")) !=
 			    QMessageBox::Yes) {
 				shareObsws_->setChecked(false);
 				return;
@@ -336,15 +496,15 @@ private:
 			ms_timecode(c.now_ms - c.run_started_ms, c.fps, false, run, sizeof(run));
 		ms_timecode(c.now_ms, c.fps, true, utc, sizeof(utc));
 		ms_timecode(c.now_ms + (int64_t)c.utc_offset_min * 60000, c.fps, true, local, sizeof(local));
-		clock_->setText(QString("Run %1   UTC %2   Local %3").arg(run, utc, local));
-		clock_->setToolTip(QString("CTD Relay's shared clock at %1 fps, synced to within about %2 ms")
-					   .arg(c.fps, 0, 'g', 4)
-					   .arg(c.delay_ms / 2, 0, 'f', 0));
+		clock_->setText(uiText("Relay.Clock").arg(run, utc, local));
+		clock_->setToolTip(uiText("Relay.Clock.Tooltip").arg(c.fps, 0, 'g', 4).arg(c.delay_ms / 2, 0, 'f', 0));
 		clock_->show();
 	}
 
 	void refresh()
 	{
+		multitrackWarning_->setVisible(obsMultitrackEnabled());
+		showProfiles_->refresh();
 		struct ms_snapshot s;
 		ms_snapshot_get(&s);
 		if (s.seq != lastSeq_) {
@@ -384,11 +544,31 @@ private:
 		}
 		if (wantIngest_ && s.ingest_seq != lastIngestSeq_) {
 			wantIngest_ = false;
-			route_->setEnabled(true);
+			updateRoute();
 			applyIngest(s.ingest);
 		}
 		lastIngestSeq_ = s.ingest_seq;
 		ms_snapshot_free(&s);
+	}
+
+	static void frontendEvent(enum obs_frontend_event event, void *data)
+	{
+		if (event != OBS_FRONTEND_EVENT_STREAMING_STARTING && event != OBS_FRONTEND_EVENT_STREAMING_STARTED &&
+		    event != OBS_FRONTEND_EVENT_STREAMING_STOPPED)
+			return;
+		auto *self = static_cast<MultiStreamDock *>(data);
+		QMetaObject::invokeMethod(self, [self] { self->updateRoute(); }, Qt::QueuedConnection);
+	}
+
+	/* OBS's main stream or the vertical canvas's is running: the button would change a live output */
+	static bool streamingBlocked() { return obs_frontend_streaming_active() || ctdVerticalStreaming(); }
+
+	void updateRoute()
+	{
+		const bool blocked = streamingBlocked();
+		route_->setEnabled(connected_ && !wantIngest_ && !blocked);
+		route_->setToolTip(blocked ? uiText("Relay.StopStreamingReason") : QString());
+		routeReason_->setVisible(blocked);
 	}
 
 	void showConnection(const ms_snapshot &s)
@@ -397,28 +577,28 @@ private:
 			server_->setText(QString::fromUtf8(s.server));
 		QString text = QString::fromUtf8(s.message);
 		if (s.link == MS_CONNECTED) {
-			text += s.events_live ? " · live updates" : " · reconnecting live updates…";
+			text += " · " + uiText(s.events_live ? "Relay.LiveUpdates" : "Relay.ReconnectingLiveUpdates");
 			/* API v1.4: OBS's own events going to the hub */
 			if (s.events_state == MS_EVENTS_OK)
-				text += QString(" · %1 OBS events sent").arg(s.events_sent);
+				text += " · " + uiText("Relay.Events.Sent").arg(s.events_sent);
 			else if (s.events_state == MS_EVENTS_FAILING)
-				text += " · OBS events: retrying";
+				text += " · " + uiText("Relay.Events.Retrying");
 			else if (s.events_state == MS_EVENTS_UNSUPPORTED)
-				text += " · this CTD Relay doesn't take OBS events yet (needs v1.4)";
+				text += " · " + uiText("Relay.Events.Unsupported");
 			else if (s.events_state == MS_EVENTS_NEED_SCOPE)
-				text += "\nTo send OBS events to CTD Relay, disconnect and connect again (it needs the "
-					"\"Send OBS events\" permission).";
+				text += "\n" + uiText("Relay.Events.NeedScope");
 		}
 		status_->setText(text);
 		approveUrl_ = QString::fromUtf8(s.approve_url);
 		approve_->setVisible(s.link == MS_PAIRING && !approveUrl_.isEmpty());
-		connect_->setText(s.link != MS_DISCONNECTED ? "Disconnect" : "Connect");
+		connect_->setText(uiText(s.link != MS_DISCONNECTED ? "Relay.Disconnect" : "Relay.Connect"));
 		const bool connected = s.link == MS_CONNECTED;
 		shareObsws_->setChecked(s.share_obs_websocket);
 		shareStatus_->setText(QString::fromUtf8(s.obs_websocket_message));
 		shareStatus_->setVisible(s.link != MS_DISCONNECTED && *s.obs_websocket_message);
 		profile_->setEnabled(connected && !s.profile_locked);
-		route_->setEnabled(connected && !wantIngest_);
+		connected_ = connected;
+		updateRoute();
 		addOverlay_->setEnabled(connected);
 		switchOverlays_->setEnabled(connected);
 		ask_->setEnabled(connected && s.overlay_request != MS_OVERLAY_SENDING &&
@@ -433,10 +613,11 @@ private:
 		for (size_t i = 0; i < count; i++) {
 			obs_data_t *p = obs_data_array_item(s.profiles, i);
 			const QString status = str(p, "status");
-			const QString label = QString("%1 — %2 (%3/%4 live)")
-						      .arg(str(p, "name"), status.isEmpty() ? "offline" : status)
-						      .arg(obs_data_get_int(p, "live"))
-						      .arg(obs_data_get_int(p, "destinations"));
+			const QString label =
+				uiText("Relay.ProfileItem")
+					.arg(str(p, "name"), status.isEmpty() ? uiText("Relay.Offline") : status)
+					.arg(obs_data_get_int(p, "live"))
+					.arg(obs_data_get_int(p, "destinations"));
 			profile_->addItem(label, str(p, "id"));
 			if (str(p, "id") == QString::fromUtf8(s.profile_id))
 				profile_->setCurrentIndex(profile_->count() - 1);
@@ -455,26 +636,34 @@ private:
 		obs_data_t *session = obs_data_get_obj(s.status, "session");
 		/* the title in ink; LIVE in magenta (on air); TEST in cyan */
 		const QString state = str(session, "status");
-		QString text = QString("<b style='color:#f2fbff'>%1</b> · %2")
-				       .arg(str(session, "title").toHtmlEscaped(),
-					    state == "live" ? QString("<b style='color:#ff00b8'>● LIVE</b>")
-							    : state.toHtmlEscaped());
+		/* only the parts that are there, so an untitled session doesn't start with a stray separator */
+		QStringList parts;
+		const QString title = str(session, "title").trimmed();
+		if (!title.isEmpty())
+			parts << QString("<b style='color:#f2fbff'>%1</b>").arg(title.toHtmlEscaped());
+		if (state == "live")
+			parts << QString("<b style='color:#ff00b8'>%1</b>").arg(uiText("Relay.Session.Live"));
+		else if (!state.isEmpty())
+			parts << state.toHtmlEscaped();
 		if (obs_data_get_bool(session, "testMode"))
-			text += " · <b style='color:#39e7ff'>TEST</b>";
+			parts << QString("<b style='color:#39e7ff'>%1</b>").arg(uiText("Relay.Session.Test"));
 		/* API v1.3: every platform's viewers added up, kept current by stream.status; absent while unknown */
 		if (obs_data_has_user_value(session, "viewers"))
-			text += QString(" · <b>%1</b> watching").arg(obs_data_get_int(session, "viewers"));
+			parts << uiText("Relay.Session.Watching")
+					 .arg(QString("<b>%1</b>").arg(obs_data_get_int(session, "viewers")));
 		obs_data_release(session);
+		QString text = parts.join(" · ");
 
 		/* per-feed bitrates, kept current by feed.status */
 		obs_data_array_t *feeds = obs_data_get_array(s.status, "feeds");
 		for (size_t i = 0; feeds && i < obs_data_array_count(feeds); i++) {
 			obs_data_t *f = obs_data_array_item(feeds, i);
-			text += QString("<br>%1: %2")
+			text += QString("%1%2: %3")
+					.arg(text.isEmpty() ? QString() : QString("<br>"))
 					.arg(str(f, "feed").toHtmlEscaped(),
 					     obs_data_get_bool(f, "online")
-						     ? QString("%1 kbps").arg(obs_data_get_int(f, "bitrateKbps"))
-						     : QString("offline"));
+						     ? uiText("Common.Kbps").arg(obs_data_get_int(f, "bitrateKbps"))
+						     : uiText("Relay.Offline"));
 			obs_data_release(f);
 		}
 		obs_data_array_release(feeds);
@@ -486,15 +675,17 @@ private:
 			const bool down = obs_data_get_bool(d, "down");
 			const bool live = obs_data_get_bool(d, "live");
 			QString line = QString("%1 (%2) — ").arg(str(d, "name"), str(d, "feed"));
-			line += down ? QString("DOWN") : live ? QString("LIVE") : str(d, "phase");
+			line += down   ? uiText("Relay.Destination.Down")
+				: live ? uiText("Relay.Destination.Live")
+				       : str(d, "phase");
 			obs_data_t *stats = obs_data_get_obj(d, "stats");
 			if (stats)
-				line += QString(" · %1 kbps · %2 fps")
-						.arg(obs_data_get_int(stats, "bitrateKbps"))
-						.arg(obs_data_get_double(stats, "fps"));
+				line += " · " + uiText("Relay.Destination.Stats")
+							.arg(obs_data_get_int(stats, "bitrateKbps"))
+							.arg(obs_data_get_double(stats, "fps"));
 			obs_data_release(stats);
 			if (obs_data_get_int(d, "viewers") > 0)
-				line += QString(" · %1 viewers").arg(obs_data_get_int(d, "viewers"));
+				line += " · " + uiText("Relay.Destination.Viewers").arg(obs_data_get_int(d, "viewers"));
 			const QString message = str(d, "message");
 			if (!message.isEmpty())
 				line += "\n" + message;
@@ -550,7 +741,7 @@ private:
 					       .arg(obs_data_get_int(o, "height"))
 					       .arg(overlayCanvas(o), str(o, "appName"));
 			if (!obs_data_get_bool(o, "appOnline"))
-				line += " (offline)";
+				line += " " + uiText("Relay.Overlay.Offline");
 			auto *item = new QListWidgetItem(line, overlays_);
 			item->setData(Qt::UserRole, str(o, "id"));
 			if (str(o, "id") == selected)
@@ -570,11 +761,12 @@ private:
 			QString color = str(user, "color");
 			if (color.isEmpty())
 				color = "#8ba3af";
-			if (obs_data_get_bool(data, "join")) {
-				/* API v1.3: "<name> joined" from Instagram/TikTok, dimmed so it doesn't drown the chat */
+			if (obs_data_get_bool(data, "join") || str(data, "kind") == "event") {
+				/* API v1.3: "<name> joined" from Instagram/TikTok, and v1.7's kind "event" lines ("<name>
+				 * followed"): dimmed so they don't drown the chat */
 				QString joined = str(data, "text");
 				if (joined.isEmpty())
-					joined = str(user, "name") + " joined";
+					joined = uiText("Relay.Chat.Joined").arg(str(user, "name"));
 				html += QString("<div style='color:#4a5a63'>[%1] %2</div>")
 						.arg(str(data, "platform").toHtmlEscaped(), joined.toHtmlEscaped());
 			} else {
@@ -596,18 +788,16 @@ private:
 	void applyIngest(obs_data_t *ingest)
 	{
 		if (!ingest) {
-			QMessageBox::warning(this, "CTD Relay",
-					     "Couldn't read this profile's stream settings. The connection needs the "
-					     "ingest:read permission (approve it again in CTD Relay).");
+			QMessageBox::warning(this, uiText("Common.DialogTitle"), uiText("Relay.Ingest.NoAccess"));
 			return;
 		}
-		if (obs_frontend_streaming_active()) {
-			QMessageBox::information(
-				this, "CTD Relay",
-				"OBS is streaming. Stop the stream first, then send it to this profile.");
+		if (streamingBlocked()) {
+			QMessageBox::information(this, uiText("Common.DialogTitle"),
+						 uiText("Relay.StopStreamingReason"));
 			return;
 		}
-		const QString server = str(ingest, "serverUrl");
+		const QString offered = str(ingest, "serverUrl");
+		const QString server = reachableIngestServer(offered, server_->text());
 		QString landscapeKey, verticalKey, verticalUrl;
 		obs_data_array_t *feeds = obs_data_get_array(ingest, "feeds");
 		for (size_t i = 0; feeds && i < obs_data_array_count(feeds); i++) {
@@ -622,18 +812,35 @@ private:
 		}
 		obs_data_array_release(feeds);
 		if (server.isEmpty() || landscapeKey.isEmpty()) {
-			QMessageBox::warning(this, "CTD Relay", "This profile has no landscape stream key.");
+			QMessageBox::warning(this, uiText("Common.DialogTitle"), uiText("Relay.Ingest.NoKey"));
 			return;
 		}
+		/* the vertical feed's server: its full URL without the key (else the main server), with the same
+		 * LAN-to-public host swap as the main stream */
+		QString verticalServer = server;
+		if (!verticalKey.isEmpty() && verticalUrl.endsWith("/" + verticalKey))
+			verticalServer =
+				reachableIngestServer(verticalUrl.chopped(verticalKey.size() + 1), server_->text());
+		if (server != offered && !offered.isEmpty() && verticalUrl.startsWith(offered))
+			verticalUrl = server + verticalUrl.mid(offered.size());
+		const bool ctdVertical = !verticalKey.isEmpty() && ctdVerticalCanvasAvailable();
 
-		QString question = QString("Set OBS's main stream to this profile?\n\nServer: %1\nStream key: %2")
-					   .arg(server, maskKey(landscapeKey));
+		QString question = uiText("Relay.Ingest.Question").arg(server, maskKey(landscapeKey));
+		if (server != offered)
+			question +=
+				"\n" + uiText("Relay.Ingest.LanSwap").arg(QUrl(offered).host(), QUrl(server).host());
+		if (ctdVertical)
+			question +=
+				"\n\n" + uiText("Relay.Ingest.CtdVertical").arg(verticalServer, maskKey(verticalKey));
+		else if (!verticalKey.isEmpty())
+			question += "\n\n" + uiText("Relay.Ingest.Aitum").arg(verticalServer, maskKey(verticalKey));
+		question += "\n\n" + uiText("Relay.Ingest.Keyframe");
 		if (!verticalKey.isEmpty())
-			question += QString("\n\nVertical (Aitum): %1, key %2\nAitum Stream Suite doesn't let other "
-					    "plugins set its outputs, so the vertical stream URL will be copied to the "
-					    "clipboard: paste it into Aitum's \"Vertical Stream\" output.")
-					    .arg(server, maskKey(verticalKey));
-		if (QMessageBox::question(this, "CTD Relay", question) != QMessageBox::Yes)
+			question += " " + uiText(ctdVertical ? "Relay.Ingest.KeyframeCtdVertical"
+							     : "Relay.Ingest.KeyframeAitum");
+		if (obsMultitrackEnabled())
+			question += "\n\n" + uiText("Relay.Ingest.Warning").arg(uiText("Relay.MultitrackWarning"));
+		if (QMessageBox::question(this, uiText("Common.DialogTitle"), question) != QMessageBox::Yes)
 			return;
 
 		obs_data_t *settings = obs_data_create();
@@ -642,18 +849,41 @@ private:
 		obs_service_t *service = obs_service_create("rtmp_custom", "default_service", settings, nullptr);
 		obs_data_release(settings);
 		if (!service) {
-			QMessageBox::warning(this, "CTD Relay", "OBS couldn't create the stream service.");
+			QMessageBox::warning(this, uiText("Common.DialogTitle"), uiText("Relay.Ingest.NoService"));
 			return;
 		}
 		obs_frontend_set_streaming_service(service);
 		obs_frontend_save_streaming_service();
 		obs_service_release(service);
-		if (!verticalUrl.isEmpty())
+
+		QString verticalNote;
+		bool verticalSet = false;
+		bool clipboard = !ctdVertical && !verticalUrl.isEmpty();
+		if (ctdVertical) {
+			QString error;
+			verticalSet = setCtdVerticalOutput(verticalServer, verticalKey, error);
+			if (verticalSet) {
+				verticalNote = " " + uiText("Relay.Ingest.VerticalSet");
+			} else {
+				blog(LOG_WARNING, "[CTD] relay: couldn't set the vertical canvas's stream: %s",
+				     error.toUtf8().constData());
+				clipboard = !verticalUrl.isEmpty();
+				verticalNote =
+					" " +
+					uiText("Relay.Ingest.VerticalFailed")
+						.arg(error, clipboard ? uiText("Relay.Ingest.VerticalFailedClipboard")
+								      : QString());
+			}
+		} else if (clipboard) {
+			verticalNote = " " + uiText("Relay.Ingest.VerticalClipboard");
+		}
+		if (clipboard)
 			QApplication::clipboard()->setText(verticalUrl);
-		blog(LOG_INFO, "[ctd-live] CTD Relay: OBS's main stream now goes to the chosen profile");
-		action_->setText(
-			"OBS's main stream now goes to this profile." +
-			QString(verticalUrl.isEmpty() ? "" : " The vertical URL is on the clipboard for Aitum."));
+		const bool keyframeSet = setMainKeyframe2s();
+		blog(LOG_INFO, "[CTD] relay: OBS's main stream now goes to the chosen profile%s",
+		     verticalSet ? ", and the vertical canvas's too" : "");
+		action_->setText(uiText("Relay.Ingest.Done") + verticalNote +
+				 (keyframeSet ? " " + uiText("Relay.Ingest.KeyframeSet") : QString()));
 	}
 
 	obs_data_t *selectedOverlay() const
@@ -685,19 +915,18 @@ private:
 	{
 		const bool vertical = overlayCanvas(overlay) == "vertical";
 		obs_source_t *sceneSource = nullptr;
-		QString where = "the current scene";
+		QString where = uiText("Relay.Overlay.CurrentScene");
 		if (vertical) {
 			obs_canvas_t *canvas = findVerticalCanvas();
 			if (canvas) {
 				sceneSource = canvasCurrentScene(canvas);
-				where = QString("the %1 canvas's scene")
+				where = uiText("Relay.Overlay.CanvasScene")
 						.arg(QString::fromUtf8(obs_canvas_get_name(canvas)));
 				obs_canvas_release(canvas);
 			}
 			if (!sceneSource) {
-				action_->setText(
-					"No vertical canvas found (Aitum Stream Suite): added to the main scene.");
-				where = "the main scene";
+				action_->setText(uiText("Relay.Overlay.NoVerticalCanvas"));
+				where = uiText("Relay.Overlay.MainScene");
 			}
 		}
 		if (!sceneSource)
@@ -709,13 +938,14 @@ private:
 		}
 		/* a name no other source has */
 		const std::string base = obs_data_get_string(overlay, "name");
-		std::string name = base.empty() ? "CTD overlay" : base;
+		const std::string fallback = obs_module_text("Relay.Overlay.DefaultName");
+		std::string name = base.empty() ? fallback : base;
 		for (int n = 2;; n++) {
 			obs_source_t *existing = obs_get_source_by_name(name.c_str());
 			if (!existing)
 				break;
 			obs_source_release(existing);
-			name = (base.empty() ? std::string("CTD overlay") : base) + " " + std::to_string(n);
+			name = (base.empty() ? fallback : base) + " " + std::to_string(n);
 		}
 		obs_data_t *settings = obs_data_create();
 		obs_source_t *source = obs_source_create("browser_source", name.c_str(), settings, nullptr);
@@ -731,11 +961,11 @@ private:
 				obs_sceneitem_set_pos(item, &origin);
 			}
 			obs_source_release(source);
-			blog(LOG_INFO, "[ctd-live] CTD Relay: added overlay '%s' to %s", name.c_str(),
+			blog(LOG_INFO, "[CTD] relay: added overlay '%s' to %s", name.c_str(),
 			     where.toUtf8().constData());
-			if (!vertical || where != "the main scene")
+			if (!vertical || where != uiText("Relay.Overlay.MainScene"))
 				action_->setText(
-					QString("Added \"%1\" to %2.").arg(QString::fromStdString(name), where));
+					uiText("Relay.Overlay.Added").arg(QString::fromStdString(name), where));
 		}
 		obs_source_release(sceneSource);
 	}
@@ -774,10 +1004,8 @@ private:
 				return true;
 			},
 			&match);
-		action_->setText(match.switched
-					 ? QString("Switched %1 overlay source(s) to this profile.").arg(match.switched)
-					 : QString("No overlay sources to switch: add some with \"Add to its "
-						   "canvas\" first."));
+		action_->setText(match.switched ? uiText("Relay.Overlay.Switched").arg(match.switched)
+						: uiText("Relay.Overlay.NoneToSwitch"));
 	}
 
 	struct DataRef {
@@ -793,15 +1021,19 @@ private:
 	QPushButton *connect_;
 	QLabel *status_;
 	QLabel *action_;
+	QLabel *multitrackWarning_;
 	QPushButton *approve_;
 	QCheckBox *shareObsws_;
 	QLabel *shareStatus_;
 	QComboBox *profile_;
+	ShowProfilesSection *showProfiles_;
 	QLabel *session_;
 	QLabel *clock_;
 	QListWidget *destinations_;
 	QListWidget *alerts_;
 	QPushButton *route_;
+	QLabel *routeReason_;
+	bool connected_ = false;
 	QListWidget *overlays_;
 	QPushButton *addOverlay_;
 	QPushButton *switchOverlays_;
@@ -844,6 +1076,6 @@ extern "C" void ctd_multistream_dock_register(void)
 {
 	auto *main = static_cast<QWidget *>(obs_frontend_get_main_window());
 	auto *dock = new MultiStreamDock(main);
-	if (!obs_frontend_add_dock_by_id("ctd-multistream", "CTD Relay", dock))
+	if (!obs_frontend_add_dock_by_id("ctd-multistream", obs_module_text("Relay.Title"), dock))
 		delete dock;
 }
