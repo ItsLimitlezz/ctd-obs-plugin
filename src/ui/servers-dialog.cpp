@@ -33,6 +33,12 @@
 
 namespace {
 
+/* user-visible text, from data/locale */
+QString uiText(const char *key)
+{
+	return QString::fromUtf8(obs_module_text(key));
+}
+
 QString qs(const char *value)
 {
 	return QString::fromUtf8(value ? value : "");
@@ -47,21 +53,21 @@ class ServersDialog : public QDialog {
 public:
 	explicit ServersDialog(QWidget *parent) : QDialog(parent)
 	{
-		setWindowTitle("CTD Hub servers");
+		setWindowTitle(uiText("Servers.Title"));
 		setWindowIcon(ctdIcon("obs-plugin-64.png"));
 		ctd::applyTheme(this);
 		auto *outer = new QVBoxLayout(this);
-		outer->addLayout(ctdHeader(this, "obs-plugin-64.png", "CTD Hub servers"));
+		outer->addLayout(ctdHeader(this, "obs-plugin-64.png", uiText("Servers.Title")));
 		auto *layout = new QHBoxLayout();
 		outer->addLayout(layout, 1);
 
 		auto *left = new QVBoxLayout();
-		left->addWidget(ctd::eyebrow("Profiles", this));
+		left->addWidget(ctd::eyebrow(uiText("Servers.Profiles"), this));
 		list_ = new QListWidget(this);
 		list_->setMinimumWidth(220);
 		left->addWidget(list_, 1);
-		auto *add = new QPushButton("Add", this);
-		auto *remove = new QPushButton("Remove", this);
+		auto *add = new QPushButton(uiText("Servers.Add"), this);
+		auto *remove = new QPushButton(uiText("Servers.Remove"), this);
 		ctd::button(add);
 		ctd::button(remove, ctd::Role::Hot);
 		auto *listButtons = new QHBoxLayout();
@@ -71,7 +77,7 @@ public:
 		layout->addLayout(left);
 
 		auto *right = new QVBoxLayout();
-		right->addWidget(ctd::eyebrow("Server", this));
+		right->addWidget(ctd::eyebrow(uiText("Servers.Server"), this));
 		auto *form = new QFormLayout();
 		name_ = new QLineEdit(this);
 		host_ = new QLineEdit(this);
@@ -79,7 +85,7 @@ public:
 		srtPort_ = new QSpinBox(this);
 		srtPort_->setRange(1, 65535);
 		apiUrl_ = new QLineEdit(this);
-		apiUrl_->setPlaceholderText("http://nas.local:9997 (blank: no stream list)");
+		apiUrl_->setPlaceholderText(uiText("Servers.ApiUrl.Placeholder"));
 		apiUser_ = new QLineEdit(this);
 		apiPass_ = secret();
 		apiToken_ = secret();
@@ -87,21 +93,20 @@ public:
 		readPass_ = secret();
 		passphrase_ = secret();
 		webhook_ = secret(); /* it may carry a token */
-		webhook_->setPlaceholderText("https://… (optional: the feed events, POSTed as JSON)");
-		default_ = new QCheckBox("Use for new sources and sources whose profile was removed", this);
-		writes_ = new QCheckBox(
-			"Allow CTD Hub to change this MediaMTX (create and remove paths, kick publishers)", this);
-		form->addRow("Name", name_);
-		form->addRow("Address", host_);
-		form->addRow("SRT port", srtPort_);
-		form->addRow("API URL", apiUrl_);
-		form->addRow("API username", apiUser_);
-		form->addRow("API password", apiPass_);
-		form->addRow("API token (instead of a login)", apiToken_);
-		form->addRow("SRT read username", readUser_);
-		form->addRow("SRT read password", readPass_);
-		form->addRow("SRT passphrase", passphrase_);
-		form->addRow("Webhook URL", webhook_);
+		webhook_->setPlaceholderText(uiText("Servers.Webhook.Placeholder"));
+		default_ = new QCheckBox(uiText("Servers.Default"), this);
+		writes_ = new QCheckBox(uiText("Servers.AllowWrites"), this);
+		form->addRow(uiText("Servers.Name"), name_);
+		form->addRow(uiText("Servers.Address"), host_);
+		form->addRow(uiText("Servers.SrtPort"), srtPort_);
+		form->addRow(uiText("Servers.ApiUrl"), apiUrl_);
+		form->addRow(uiText("Servers.ApiUser"), apiUser_);
+		form->addRow(uiText("Servers.ApiPass"), apiPass_);
+		form->addRow(uiText("Servers.ApiToken"), apiToken_);
+		form->addRow(uiText("Servers.ReadUser"), readUser_);
+		form->addRow(uiText("Servers.ReadPass"), readPass_);
+		form->addRow(uiText("Servers.Passphrase"), passphrase_);
+		form->addRow(uiText("Servers.Webhook"), webhook_);
 		form->addRow("", default_);
 		form->addRow("", writes_);
 		right->addLayout(form);
@@ -109,8 +114,8 @@ public:
 		testResult_->setWordWrap(true);
 		right->addWidget(testResult_);
 		auto *actions = new QHBoxLayout();
-		auto *test = new QPushButton("Test", this);
-		auto *save = new QPushButton("Save", this);
+		auto *test = new QPushButton(uiText("Servers.Test"), this);
+		auto *save = new QPushButton(uiText("Servers.Save"), this);
 		save->setDefault(true);
 		ctd::button(test);
 		ctd::button(save, ctd::Role::Primary);
@@ -154,8 +159,9 @@ private:
 			struct ctd_server s;
 			if (!servers_get_index(i, &s))
 				continue;
-			list_->addItem(
-				QString("%1 (%2)%3").arg(qs(s.name), qs(s.host), s.is_default ? " · default" : ""));
+			list_->addItem(QString("%1 (%2)%3")
+					       .arg(qs(s.name), qs(s.host),
+						    s.is_default ? " · " + uiText("Servers.DefaultTag") : QString()));
 			ids_.push_back(qs(s.id));
 			if (qs(s.id) == id)
 				select = (int)ids_.size() - 1;
@@ -179,7 +185,7 @@ private:
 				   servers_get(ids_[(size_t)row].toUtf8().constData(), &s);
 		if (found)
 			editingId_ = qs(s.id);
-		name_->setText(found ? qs(s.name) : "New server");
+		name_->setText(found ? qs(s.name) : uiText("Servers.NewServer"));
 		host_->setText(found ? qs(s.host) : "");
 		srtPort_->setValue(found ? s.srt_port : 8890);
 		apiUrl_->setText(found ? qs(s.api_url) : "");
@@ -206,9 +212,8 @@ private:
 	{
 		if (editingId_.isEmpty())
 			return;
-		if (QMessageBox::question(this, "CTD OBS",
-					  QString("Remove \"%1\"? Sources using it move to the default server.")
-						  .arg(name_->text())) != QMessageBox::Yes)
+		if (QMessageBox::question(this, uiText("Common.DialogTitle"),
+					  uiText("Servers.Remove.Question").arg(name_->text())) != QMessageBox::Yes)
 			return;
 		servers_remove(editingId_.toUtf8().constData());
 		reload("");
@@ -218,12 +223,13 @@ private:
 	{
 		const std::string host = utf8(host_);
 		if (host.empty()) {
-			QMessageBox::information(this, "CTD OBS", "Type the address of the machine running MediaMTX.");
+			QMessageBox::information(this, uiText("Common.DialogTitle"), uiText("Servers.NeedHost"));
 			return;
 		}
 		const std::string passphrase = utf8(passphrase_);
 		if (!passphrase.empty() && (passphrase.size() < 10 || passphrase.size() > 79)) {
-			QMessageBox::information(this, "CTD OBS", "An SRT passphrase is 10 to 79 characters long.");
+			QMessageBox::information(this, uiText("Common.DialogTitle"),
+						 uiText("Servers.PassphraseLength"));
 			return;
 		}
 		const std::string name = utf8(name_), apiUrl = utf8(apiUrl_), apiUser = utf8(apiUser_);
@@ -231,7 +237,7 @@ private:
 		const std::string readUser = utf8(readUser_), readPass = readPass_->text().toStdString();
 		const std::string webhook = utf8(webhook_);
 		if (!webhook.empty() && webhook.rfind("http://", 0) != 0 && webhook.rfind("https://", 0) != 0) {
-			QMessageBox::information(this, "CTD OBS", "A webhook URL starts with http:// or https://.");
+			QMessageBox::information(this, uiText("Common.DialogTitle"), uiText("Servers.WebhookScheme"));
 			return;
 		}
 
@@ -253,7 +259,7 @@ private:
 		char id[48] = "";
 		servers_put(&s, id, sizeof(id)); /* copies; sources on it reconnect */
 		reload(QString::fromUtf8(id));
-		testResult_->setText("Saved.");
+		testResult_->setText(uiText("Servers.Saved"));
 	}
 
 	/* H3: asks the profile's API for its streams, off the UI thread */
@@ -265,11 +271,10 @@ private:
 		char host[256];
 		int port = 0;
 		if (!ctd_server_api_address(&s, host, sizeof(host), &port)) {
-			testResult_->setText(
-				"No API URL: the stream list and path tools need one (http://<address>:9997).");
+			testResult_->setText(uiText("Servers.Test.NoApi"));
 			return;
 		}
-		testResult_->setText("Testing…");
+		testResult_->setText(uiText("Servers.Testing"));
 		QPointer<QLabel> result = testResult_;
 		std::thread([result, apiHost = std::string(host), port, user = utf8(apiUser_),
 			     pass = apiPass_->text().toStdString(), token = utf8(apiToken_)] {
@@ -283,16 +288,16 @@ private:
 			QString text;
 			switch (status) {
 			case MTX_API_OK:
-				text = QString("Connected: %1 streams, %2 live.").arg(list.count).arg(live);
+				text = uiText("Servers.Test.Ok").arg(list.count).arg(live);
 				break;
 			case MTX_API_UNAUTHORIZED:
-				text = "The API refused the login: check the username and password, or the token.";
+				text = uiText("Servers.Test.Unauthorized");
 				break;
 			case MTX_API_NOT_FOUND:
-				text = "Something answered, but not a MediaMTX v3 API (MediaMTX 1.0 or newer is needed).";
+				text = uiText("Servers.Test.NotFound");
 				break;
 			default:
-				text = "Couldn't reach the API. Is \"api: yes\" set in mediamtx.yml, and the port open?";
+				text = uiText("Servers.Test.Unreachable");
 				break;
 			}
 			mtx_path_list_free(&list);

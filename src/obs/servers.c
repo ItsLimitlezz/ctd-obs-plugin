@@ -177,7 +177,7 @@ static void load(void)
 	if (!servers.list.num) {
 		struct ctd_server s = {0};
 		new_id(s.id, sizeof(s.id));
-		s.name = bstrdup("This computer");
+		s.name = bstrdup(obs_module_text("Servers.DefaultName"));
 		s.host = bstrdup("127.0.0.1");
 		s.srt_port = 8890;
 		s.api_url = bstrdup("http://127.0.0.1:9997");
