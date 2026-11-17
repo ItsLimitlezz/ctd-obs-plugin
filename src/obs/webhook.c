@@ -69,7 +69,7 @@ static void deliver(struct delivery *d)
 	if (now - hook.logged_ns >= LOG_EVERY_NS) {
 		hook.logged_ns = now;
 		blog(LOG_WARNING,
-		     "[ctd-live] the webhook of profile \"%s\" failed (%s); events are dropped, never retried",
+		     "[CTD] live-source: the webhook of profile \"%s\" failed (%s); events are dropped, never retried",
 		     d->profile, http_status_text(status));
 	}
 }

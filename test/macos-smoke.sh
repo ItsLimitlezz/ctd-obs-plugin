@@ -158,13 +158,13 @@ echo '::group::Run OBS'
 "${work}/OBS.app/Contents/MacOS/OBS" --disable-updater --disable-shutdown-check --multi > "${out}/obs-stdout.log" 2>&1 &
 obs_pid=$!
 
-if wait_for '\[ctd-live\] plugin loaded' 60; then
-  pass "plugin loaded: $(grep -h -o '\[ctd-live\] plugin loaded.*' "$(log_file)" | head -n 1)"
+if wait_for '\[CTD\] live-source: plugin loaded' 60; then
+  pass "plugin loaded: $(grep -h -o '\[CTD\] live-source: plugin loaded.*' "$(log_file)" | head -n 1)"
 else
   fail "the plugin didn't load"
-  grep -i -E 'ctd-live|dlopen|failed to load' "$(log_file)" 2> /dev/null | head -n 20 || true
+  grep -i -E 'ctd-live|\[CTD\]|dlopen|failed to load' "$(log_file)" 2> /dev/null | head -n 20 || true
 fi
-if wait_for '\[ctd-live:CTD Test\] connected:' 60; then
+if wait_for '\[CTD\] live-source: CTD Test: connected:' 60; then
   line="$(grep -h -o 'connected: video=.*' "$(log_file)" | head -n 1)"
   pass "the source connected: ${line}"
   [[ "${line}" == *videotoolbox* ]] || note "video isn't on VideoToolbox: ${line}"
@@ -177,7 +177,7 @@ grep -q 'decoding the video on the CPU' "$(log_file)" \
   && note "VideoToolbox fell back to the CPU: $(grep -h -o '\] .*decoding the video on the CPU' "$(log_file)" | head -n 1)"
 
 kill "${publisher_pid}" 2> /dev/null || true
-if wait_for '\[ctd-live:CTD Test\] no signal for' 30; then
+if wait_for '\[CTD\] live-source: CTD Test: no signal for' 30; then
   pass "feed dropped: $(grep -h -o 'no signal for.*' "$(log_file)" | head -n 1)"
 else
   fail "the source didn't notice the feed dropping"
@@ -185,7 +185,7 @@ fi
 sleep 3
 shot loss-card
 publish
-if wait_for '\[ctd-live:CTD Test\] back live after' 45; then
+if wait_for '\[CTD\] live-source: CTD Test: back live after' 45; then
   pass "feed restored: $(grep -h -o 'back live after.*' "$(log_file)" | head -n 1)"
 else
   fail "the source didn't come back after the feed returned"
@@ -209,13 +209,13 @@ if grep -q 'Number of memory leaks' "${log}"; then
 else
   fail "OBS didn't shut down cleanly (exit ${status})"
 fi
-if grep -E -q '\[ctd-live[^]]*\].*(crash|assert)' "${log}"; then fail "the log mentions a crash or an assert"; fi
+if grep -E -q '\[CTD\].*(crash|assert)' "${log}"; then fail "the log mentions a crash or an assert"; fi
 crashes="$(find "${HOME}/Library/Logs/DiagnosticReports" -name 'OBS*' -newer "${work}/obs.dmg" 2> /dev/null || true)"
 if [[ -n "${crashes}" ]]; then
   fail "OBS left a crash report"
   cp ${crashes} "${out}/" 2> /dev/null || true
 fi
-grep -h '\[ctd-live' "${log}" > "${out}/ctd-lines.txt" || true
+grep -h '\[CTD\]' "${log}" > "${out}/ctd-lines.txt" || true
 snaps="$(grep -c 'exceeded cap' "${log}" || true)"
 [[ "${snaps}" -gt 0 ]] && note "${snaps} drift snaps (render times on this runner: $(grep -h -o 'render_video: .*' "${log}" | head -n 1))"
 

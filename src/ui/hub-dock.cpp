@@ -197,7 +197,7 @@ public:
 		/* H10 */
 		table_ = new QTableWidget(0, ColCount, this);
 		table_->setHorizontalHeaderLabels(
-			{"", "Stream", "Publisher", "Tracks", "Bitrate", "Link", "Issues", "In OBS"});
+			{"", "Stream", "Publisher", "Tracks", "Bitrate", "Link", "Issues", "In CTD OBS"});
 		table_->verticalHeader()->setVisible(false);
 		table_->setSelectionBehavior(QAbstractItemView::SelectRows);
 		table_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -277,7 +277,7 @@ public:
 		connect(timer, &QTimer::timeout, this, [this] { refresh(); });
 		timer->start(1000);
 		loadProfiles();
-		/* a profile added, changed or removed anywhere (Tools ▸ CTD Live servers) shows here at once */
+		/* a profile added, changed or removed anywhere (Tools ▸ CTD Hub servers) shows here at once */
 		servers_watch(serversChanged, this);
 	}
 
@@ -446,7 +446,7 @@ private:
 			obs_source_t *scene = obs_get_source_by_name(autoScene_->currentText().toUtf8().constData());
 			if (!scene)
 				return;
-			blog(LOG_INFO, "[ctd-live] CTD Hub: '%s' went live; adding it to '%s'", name.c_str(),
+			blog(LOG_INFO, "[CTD] hub: '%s' went live; adding it to '%s'", name.c_str(),
 			     obs_source_get_name(scene));
 			addToScene(name, scene, 0, 0, 0);
 			inObs_ = findInObs();
@@ -495,7 +495,7 @@ private:
 				: status == MTX_API_UNAUTHORIZED ? "The server refused: this API login can't change it."
 				: status == MTX_API_NOT_FOUND    ? "The server doesn't have that."
 								 : "The server refused or couldn't be reached.";
-			blog(status == MTX_API_OK ? LOG_INFO : LOG_WARNING, "[ctd-live] CTD Hub: %s %s",
+			blog(status == MTX_API_OK ? LOG_INFO : LOG_WARNING, "[CTD] hub: %s %s",
 			     done.toUtf8().constData(), status == MTX_API_OK ? "(done)" : "(failed)");
 			QMetaObject::invokeMethod(
 				qApp,
@@ -514,7 +514,7 @@ private:
 		const auto info = publishers_.find(path);
 		if (info == publishers_.end() || info->second.second.empty())
 			return;
-		if (QMessageBox::question(this, "CTD Hub",
+		if (QMessageBox::question(this, "CTD OBS",
 					  QString("Disconnect the publisher of \"%1\"? A camera app normally reconnects "
 						  "on its own.")
 						  .arg(QString::fromStdString(path))) != QMessageBox::Yes)
@@ -530,7 +530,7 @@ private:
 	void removePath(const std::string &path)
 	{
 		if (QMessageBox::question(
-			    this, "CTD Hub",
+			    this, "CTD OBS",
 			    QString("Remove \"%1\" from the server's configuration? (Until MediaMTX restarts, "
 				    "for paths in mediamtx.yml.)")
 				    .arg(QString::fromStdString(path))) != QMessageBox::Yes)
@@ -544,7 +544,7 @@ private:
 	{
 		bool ok = false;
 		const QString name =
-			QInputDialog::getText(this, "CTD Hub",
+			QInputDialog::getText(this, "CTD OBS",
 					      "New path name (letters, digits, _ - . ~ /):", QLineEdit::Normal,
 					      QString(), &ok)
 				.trimmed();
@@ -877,7 +877,7 @@ private:
 		QStringList scenes;
 		for (const std::string &scene : in->scenes)
 			scenes << QString::fromStdString(scene);
-		return scenes.isEmpty() ? "in OBS, in no scene" : scenes.join(", ");
+		return scenes.isEmpty() ? "in CTD OBS, in no scene" : scenes.join(", ");
 	}
 
 	void showStatus(const struct mtx_poll_snapshot &snap)
@@ -964,7 +964,7 @@ private:
 				obs_sceneitem_set_bounds_alignment(item, OBS_ALIGN_CENTER);
 				obs_sceneitem_set_bounds(item, &bounds);
 			}
-			blog(LOG_INFO, "[ctd-live] CTD Hub: added '%s' to '%s'", obs_source_get_name(source),
+			blog(LOG_INFO, "[CTD] hub: added '%s' to '%s'", obs_source_get_name(source),
 			     obs_source_get_name(sceneSource));
 			obs_source_release(source);
 		}

@@ -57,7 +57,7 @@ typedef void (*servers_changed_fn)(void *param, const char *id);
 void servers_watch(servers_changed_fn fn, void *param);
 void servers_unwatch(servers_changed_fn fn, void *param);
 
-/* src/ui/servers-dialog.cpp: the Tools ▸ CTD Live servers window (UI thread only). */
+/* src/ui/servers-dialog.cpp: the Tools ▸ CTD Hub servers window (UI thread only). */
 void ctd_servers_dialog_register(void);
 void ctd_servers_dialog_open(void);
 
