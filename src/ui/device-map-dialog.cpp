@@ -135,10 +135,7 @@ private:
 	QWidget *makeRow(const show_device_row &row, QWidget *parent)
 	{
 		auto *card = new QFrame(parent);
-		card->setObjectName("ctdDeviceCard");
-		card->setStyleSheet(
-			QString("#ctdDeviceCard { background: %1; border: 1px solid %2; border-radius: 4px; }")
-				.arg(ctd::surface().name(), ctd::line().name()));
+		card->setObjectName("ctdDeviceCard"); /* styled by #ctdRoot QFrame#ctdDeviceCard (theme or brand.hpp) */
 		auto *v = new QVBoxLayout(card);
 		v->setContentsMargins(10, 8, 10, 8);
 		v->setSpacing(4);

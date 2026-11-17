@@ -279,7 +279,7 @@ public:
 		layout->addWidget(action_);
 		multitrackWarning_ = new QLabel(kMultitrackWarning, this);
 		multitrackWarning_->setWordWrap(true);
-		multitrackWarning_->setStyleSheet("color: #e5a50a; font-weight: bold;");
+		ctd::setWarning(multitrackWarning_, true);
 		multitrackWarning_->hide();
 		layout->addWidget(multitrackWarning_);
 		approve_ = ctd::button(new QPushButton("Open the approval page →", this), ctd::Role::Primary);
