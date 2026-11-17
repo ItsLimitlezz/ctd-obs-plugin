@@ -14,7 +14,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: plugin-lldb2-26, os: macos-26, no_plugin: '', lldb: '1' }
+          - { name: srgb-26, os: macos-26, srgb: '1' }
+          - { name: info-26, os: macos-26, srgb: '' }
+          - { name: plugin-14, os: macos-14, srgb: '' }
+          - { name: plugin-15-intel, os: macos-15-intel, srgb: '' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -24,16 +27,13 @@ jobs:
           run-id: 42745575547
           github-token: ${{ github.token }}
       - name: Probe
-        env:
-          SMOKE_NO_PLUGIN: ${{ matrix.no_plugin }}
-          SMOKE_LLDB: ${{ matrix.lldb }}
         run: |
           sw_vers
-          system_profiler SPDisplaysDataType || true
-          ls -la /Library/ColorSync/Profiles ~/Library/ColorSync/Profiles 2>&1 || true
-          defaults read -g AppleInterfaceStyle 2>&1 || true
+          ls -laR /Library/ColorSync/Profiles/Displays 2>&1 || true
+          for f in /Library/ColorSync/Profiles/Displays/*/* /Library/ColorSync/Profiles/Displays/*; do [ -f "$f" ] && { echo "== $f"; strings -n 6 "$f" | head -20; }; done || true
+          swift test/macos/display-srgb.swift ${{ matrix.srgb == '1' && '--set' || '' }} || echo "swift failed $?"
           bash test/macos-smoke.sh "$(find "${{ runner.temp }}/plugin" -type f | head -n 1)" || true
-          echo '--- obs-stdout tail'; tail -n 200 test/out/macos/obs-stdout.log
+          echo '--- obs-stdout tail'; tail -n 20 test/out/macos/obs-stdout.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
