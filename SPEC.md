@@ -52,7 +52,7 @@ what is happening upstream, and to keep feeds aligned with each other.
 
 | Piece | What it is |
 |---|---|
-| **CTD Live Source (SRT)** | The OBS source. One per feed. Add as many as you want to any scene. Name stays as in v1 so existing scenes keep working. |
+| **CTD Live Source** | The OBS source. One per feed. Add as many as you want to any scene. Only its display name changed (it was "CTD Live Source (SRT)"); its source type id stays as in v1 so existing scenes keep working. |
 | **CTD Hub** | An OBS dock (Docks menu). Lists the server's streams, adds them to scenes, shows issues and sync groups. |
 | **Server profiles** | Saved MediaMTX connections (address, ports, API, credentials). Sources point at a profile + path, never a raw URL. |
 | **Engine** | The connect/demux/decode/clock/audio/timecode core, with no libobs dependency (section 10). |
@@ -98,7 +98,7 @@ the earlier v2 spec so existing notes stay valid.
 - **R7.** Always hand OBS **48 kHz, stereo, float planar**, whatever arrives (8 to 96 kHz, mono or stereo, any sample
   format AAC, Opus or MP3 decoders produce), via libswresample (OBS ships it).
 - **R8.** Rebuild the resampler on the fly when rate, layout or format changes: no reconnect, no gap longer than one
-  audio frame, and a log line (`[ctd-live:Cam 1] audio format changed 48000 Hz stereo → 16000 Hz mono`).
+  audio frame, and a log line (`[CTD] live-source: Cam 1: audio format changed 48000 Hz stereo → 16000 Hz mono`).
 - **R9.** Mono becomes dual mono (centre), not left only.
 
 ### 4.5 Signal loss
@@ -120,7 +120,7 @@ the earlier v2 spec so existing notes stay valid.
 - **R16.** Stats in properties: state, lateness/target, compensation, input (resolution, codec, fps, audio rate and
   channels), resyncs, reconnects, upstream RTT/loss/bitrate (from the hub poller, section 5).
 - **R17.** **Reconnect now** button.
-- **R18.** Every log line prefixed `[ctd-live:<source name>]`.
+- **R18.** Every log line prefixed `[CTD] live-source: <source name>:` (it was `[ctd-live:<source name>]`).
 
 ### 4.7 Hardware decode
 - **R19.** **Decoder:** Auto (default), Software, Hardware. Auto tries `d3d12va` then `dxva2` (Windows),

@@ -28,9 +28,18 @@ extern struct obs_source_info ctd_live_audio_source_info;
 void ctd_multistream_dock_register(void);
 void ctd_hub_dock_register(void);
 
+/* What OBS shows for this module (the plugin list, the log). Display text only; the module's file name and its source
+ * type ids stay as they are, so saved scenes keep loading. */
+OBS_MODULE_AUTHOR("CineTech Digital")
+
+MODULE_EXPORT const char *obs_module_name(void)
+{
+	return "CTD Live Source";
+}
+
 MODULE_EXPORT const char *obs_module_description(void)
 {
-	return "Live-edge SRT source for MediaMTX";
+	return "Receive camera feeds from CTD Live apps and control CTD Relay.";
 }
 
 bool obs_module_load(void)
@@ -46,7 +55,7 @@ bool obs_module_load(void)
 	ctd_servers_dialog_register();
 	ctd_hub_dock_register();
 	show_init(); /* Show Profiles: turns itself on once OBS has loaded, only inside CTD OBS */
-	blog(LOG_INFO, "[ctd-live] plugin loaded (version %s)", PLUGIN_VERSION);
+	blog(LOG_INFO, "[CTD] live-source: plugin loaded (version %s)", PLUGIN_VERSION);
 	return true;
 }
 

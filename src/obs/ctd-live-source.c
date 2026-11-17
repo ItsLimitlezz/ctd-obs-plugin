@@ -194,7 +194,7 @@ struct ctd_source {
 
 /* --------------------------------------------------------------- logging -- */
 
-/* Every line names its source, "[ctd-live:Cam 1] ..." (SPEC R18), so a show's log can be read with many feeds. */
+/* Every line names its source, "[CTD] live-source: Cam 1: ..." (SPEC R18), so a show's log can be read with many feeds. */
 #ifdef __GNUC__
 __attribute__((format(printf, 3, 4)))
 #endif
@@ -211,7 +211,7 @@ ctd_log(struct ctd_source *ctx, int level, const char *format, ...)
 	va_start(args, format);
 	dstr_vprintf(&message, format, args);
 	va_end(args);
-	blog(level, "[ctd-live:%s] %s", name, message.array ? message.array : "");
+	blog(level, "[CTD] live-source: %s: %s", name, message.array ? message.array : "");
 	dstr_free(&message);
 }
 
@@ -1330,13 +1330,13 @@ static void add_delay_settings(obs_properties_t *props, struct ctd_source *ctx)
 static const char *ctd_get_name(void *unused)
 {
 	UNUSED_PARAMETER(unused);
-	return "CTD Live Source (SRT)";
+	return "CTD Live Source";
 }
 
 static const char *ctd_audio_get_name(void *unused)
 {
 	UNUSED_PARAMETER(unused);
-	return "CTD Live Audio (SRT)";
+	return "CTD Live Audio";
 }
 
 static bool string_changed(const char *old, const char *new_value)

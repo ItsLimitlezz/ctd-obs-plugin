@@ -116,9 +116,9 @@ static bool core_apply(const char *collection_path, const char *profile_path, ch
 		calldata_get_string(&cd, "error", &error);
 	}
 	if (!found)
-		snprintf(err, err_size, "This OBS can't switch show profiles (the CTD OBS core is missing).");
+		snprintf(err, err_size, "This PC can't switch show profiles (the CTD OBS core is missing).");
 	else if (!success)
-		snprintf(err, err_size, "OBS refused to load it: %s", error && *error ? error : "no reason given");
+		snprintf(err, err_size, "CTD OBS refused to load it: %s", error && *error ? error : "no reason given");
 	calldata_free(&cd);
 	return found && success;
 }
@@ -260,7 +260,7 @@ static bool stage(struct apply_job *job, char *err, size_t err_size)
 		sscanf(obs_get_version_string(), "%d.%d.%d", &x, &y, &z);
 		if (a > x || (a == x && (bb > y || (bb == y && c > z)))) {
 			char line[200];
-			snprintf(line, sizeof(line), "Saved with OBS %s, newer than this OBS (%s).", from,
+			snprintf(line, sizeof(line), "Saved with CTD OBS %s, newer than this CTD OBS (%s).", from,
 				 obs_get_version_string());
 			warn(job, line);
 		}
@@ -427,7 +427,7 @@ static bool verify(struct apply_job *job, char *why, size_t size)
 	bfree(collection);
 	bfree(profile);
 	if (!names) {
-		snprintf(why, size, "OBS didn't load it.");
+		snprintf(why, size, "CTD OBS didn't load it.");
 		return false;
 	}
 	for (size_t i = 0; i < cj_size(job->uuids); i++) {
@@ -560,7 +560,7 @@ static void swap_ui(void *param)
 		if (job->had_collection && sfs_exists(job->backup_collection) && !sfs_exists(job->target_collection))
 			sfs_rename(job->backup_collection, job->target_collection);
 		sfs_remove_tree(job->staging);
-		fail_job(job, "Didn't switch: OBS's files for it are in use. Nothing changed.");
+		fail_job(job, "Didn't switch: CTD OBS's files for it are in use. Nothing changed.");
 		return;
 	}
 	if (!sfs_rename(job->staged_collection, job->target_collection) ||
@@ -631,7 +631,7 @@ void show_apply_start(const char *id, int64_t seq)
 		return;
 	}
 	if (!job_paths(job)) {
-		fail_job(job, "Can't find OBS's settings folder.");
+		fail_job(job, "Can't find CTD OBS's settings folder.");
 		return;
 	}
 	if (!show_run_worker(stage_thread, job)) {

@@ -337,7 +337,7 @@ void ShowProfilesSection::askSwitch()
 	if (id.isEmpty())
 		return;
 	const auto answer = QMessageBox::question(
-		this, "CTD Relay",
+		this, "CTD OBS",
 		QString("Switch to %1?\n\nOBS loads its scenes and settings; the current ones stay saved.")
 			.arg(selectedName()));
 	if (answer != QMessageBox::Yes)
@@ -349,15 +349,15 @@ void ShowProfilesSection::askSwitch()
 void ShowProfilesSection::askSave()
 {
 	bool ok = false;
-	QString name = QInputDialog::getText(this, "CTD Relay", "Name for this show profile:", QLineEdit::Normal,
+	QString name = QInputDialog::getText(this, "CTD OBS", "Name for this show profile:", QLineEdit::Normal,
 					     QString(), &ok);
 	while (ok) {
 		name = name.trimmed();
 		const QString problem = nameProblem(name);
 		if (problem.isEmpty())
 			break;
-		QMessageBox::warning(this, "CTD Relay", problem);
-		name = QInputDialog::getText(this, "CTD Relay", "Name for this show profile:", QLineEdit::Normal, name,
+		QMessageBox::warning(this, "CTD OBS", problem);
+		name = QInputDialog::getText(this, "CTD OBS", "Name for this show profile:", QLineEdit::Normal, name,
 					     &ok);
 	}
 	if (!ok)
@@ -372,7 +372,7 @@ void ShowProfilesSection::askUpdate()
 	if (id.isEmpty() || id != activeId_)
 		return;
 	const auto answer = QMessageBox::question(
-		this, "CTD Relay", QString("Save OBS's current setup as a new revision of %1?").arg(selectedName()));
+		this, "CTD OBS", QString("Save CTD OBS's current setup as a new revision of %1?").arg(selectedName()));
 	if (answer != QMessageBox::Yes)
 		return;
 	if (!show_update(id.toUtf8().constData()))
@@ -385,8 +385,8 @@ void ShowProfilesSection::askDelete()
 	if (id.isEmpty() || id == activeId_)
 		return;
 	const auto answer = QMessageBox::question(
-		this, "CTD Relay",
-		QString("Delete %1?\n\nThis removes its saved copy here. OBS's own scene collection and profile "
+		this, "CTD OBS",
+		QString("Delete %1?\n\nThis removes its saved copy here. CTD OBS's own scene collection and profile "
 			"files are not deleted.")
 			.arg(selectedName()));
 	if (answer != QMessageBox::Yes)
@@ -463,7 +463,7 @@ void ShowProfilesSection::askSaveUp()
 	if (!linked)
 		text += QString("\n\nIt is linked to the CTD Relay profile %1: other machines can then download it.")
 				.arg(relayProfileName_);
-	if (QMessageBox::question(this, "CTD Relay", text) != QMessageBox::Yes)
+	if (QMessageBox::question(this, "CTD OBS", text) != QMessageBox::Yes)
 		return;
 	if (!show_sync_save_up(id.toUtf8().constData()))
 		refresh(); /* the status line says why */
@@ -476,7 +476,7 @@ void ShowProfilesSection::askPull()
 		return;
 	const QString relay = item->data(Qt::UserRole).toString();
 	const QString name = item->data(Qt::UserRole + 1).toString();
-	QMessageBox box(QMessageBox::Question, "CTD Relay",
+	QMessageBox box(QMessageBox::Question, "CTD OBS",
 			QString("Download %1's show profile to this machine?").arg(name), QMessageBox::NoButton, this);
 	QPushButton *download = box.addButton("Download", QMessageBox::AcceptRole);
 	QPushButton *andSwitch = live_ ? nullptr : box.addButton("Download and switch", QMessageBox::AcceptRole);
@@ -494,8 +494,8 @@ void ShowProfilesSection::askUpdateNow()
 	if (activeId_.isEmpty())
 		return;
 	const auto answer = QMessageBox::question(
-		this, "CTD Relay",
-		"Apply the revision downloaded from CTD Relay now?\n\nOBS reloads this show profile's scenes and settings.");
+		this, "CTD OBS",
+		"Apply the revision downloaded from CTD Relay now?\n\nCTD OBS reloads this show profile's scenes and settings.");
 	if (answer != QMessageBox::Yes)
 		return;
 	if (!show_switch(activeId_.toUtf8().constData(), 0))
@@ -525,7 +525,7 @@ void ShowProfilesSection::askConflict()
 	conflictOpen_ = true;
 	QMessageBox box(this);
 	box.setIcon(QMessageBox::Warning);
-	box.setWindowTitle("CTD Relay");
+	box.setWindowTitle("CTD OBS");
 	box.setText(QString("%1 changed on CTD Relay%2 (revision %3) since this machine's copy.")
 			    .arg(name, by.isEmpty() ? QString() : QString(" from %1").arg(by))
 			    .arg(head));
