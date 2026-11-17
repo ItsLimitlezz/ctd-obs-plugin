@@ -4,7 +4,8 @@
  * cyan primary buttons with a hard magenta offset shadow, and the cyan / ink / magenta stripe motif.
  *
  * ctd::applyTheme() styles one widget and everything inside it (a dock, the servers window); nothing else in OBS is
- * touched. The fonts ship in data/fonts (SIL Open Font License) and load once; without them the system's mono and sans
+ * touched. When the active OBS theme already styles #ctdRoot (CTD OBS's CTD Night theme does, with the same rules as
+ * styleSheet() below in theme variables), the widget takes its colours from the theme instead, so it follows it. The fonts ship in data/fonts (SIL Open Font License) and load once; without them the system's mono and sans
  * stand in.
  */
 
@@ -12,6 +13,7 @@
 
 #include <obs-module.h>
 
+#include <QApplication>
 #include <QCheckBox>
 #include <QColor>
 #include <QFont>
@@ -154,6 +156,7 @@ inline QString styleSheet()
 #ctdRoot QLabel[ctdRole="title"] { color: #f2fbff; }
 #ctdRoot QLabel[ctdRole="eyebrow"] { color: #39e7ff; }
 #ctdRoot QLabel[ctdRole="muted"] { color: #8ba3af; }
+#ctdRoot QLabel[ctdRole="warning"] { color: #e5a50a; font-weight: bold; }
 
 #ctdRoot QPushButton { background: transparent; color: #f2fbff; border: 1px solid #222b34; border-radius: 0px;
 	padding: 6px 12px; }
@@ -196,6 +199,8 @@ inline QString styleSheet()
 #ctdRoot QGroupBox { border: 1px solid #1a2127; border-radius: 4px; margin-top: 14px; padding: 10px 8px 8px 8px; }
 #ctdRoot QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; color: #39e7ff; }
 
+#ctdRoot QFrame#ctdDeviceCard { background: #08111a; border: 1px solid #1a2127; border-radius: 4px; }
+
 #ctdRoot QScrollArea#ctdScroll, #ctdRoot QWidget#ctdScrollViewport, #ctdRoot QWidget#ctdBody {
 	background: transparent; border: none; }
 
@@ -209,14 +214,24 @@ inline QString styleSheet()
 		.arg(chevron);
 }
 
-/* Styles a dock or window and everything in it */
+/* True when the active OBS theme has the CTD dock rules (CTD OBS's CTD Night theme) */
+inline bool themeStylesCtd()
+{
+	return qApp && qApp->styleSheet().contains(QLatin1String("#ctdRoot"));
+}
+
+/* Styles a dock or window and everything in it: by the theme when it has the CTD rules, else by styleSheet() */
 inline void applyTheme(QWidget *root)
 {
 	root->setObjectName("ctdRoot");
 	root->setAttribute(Qt::WA_StyledBackground, true);
-	root->setStyleSheet(styleSheet());
+	if (!themeStylesCtd())
+		root->setStyleSheet(styleSheet());
 	root->setFont(font(Face::Mono, 12));
 }
+
+/* A label in the warning style (amber, bold), or back to normal */
+inline void setWarning(QWidget *label, bool warning);
 
 /* A dock's scrolling body. OBS (Qt) only lets a dock into an area that fits its minimum size, so a dock whose
  * sections are all stacked in one fixed layout is too tall for most areas and won't dock. This scroll area asks for
@@ -306,6 +321,12 @@ inline void repolish(QWidget *widget)
 {
 	widget->style()->unpolish(widget);
 	widget->style()->polish(widget);
+}
+
+inline void setWarning(QWidget *label, bool warning)
+{
+	label->setProperty("ctdRole", warning ? QVariant(QStringLiteral("warning")) : QVariant());
+	repolish(label);
 }
 
 enum class Role { Secondary, Primary, Hot };
