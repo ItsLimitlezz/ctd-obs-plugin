@@ -54,6 +54,12 @@
 
 namespace {
 
+/* user-visible text, from data/locale */
+QString uiText(const char *key)
+{
+	return QString::fromUtf8(obs_module_text(key));
+}
+
 constexpr int kHistory = 60; /* bitrate samples kept per stream for its sparkline (2 minutes at 2 s) */
 
 enum Column { ColLive, ColName, ColPublisher, ColTracks, ColBitrate, ColLink, ColIssues, ColInObs, ColCount };
@@ -111,8 +117,8 @@ protected:
 		const double now = values_.empty() ? 0.0 : values_.back();
 		p.setPen(ctd::inkBody());
 		p.drawText(rect().adjusted(2, 0, -2, 0), Qt::AlignRight | Qt::AlignVCenter,
-			   now >= 1000 ? QString("%1 Mbps").arg(now / 1000.0, 0, 'f', 1)
-				       : QString("%1 kbps").arg((int)std::lround(now)));
+			   now >= 1000 ? uiText("Common.Mbps").arg(now / 1000.0, 0, 'f', 1)
+				       : uiText("Common.Kbps").arg((int)std::lround(now)));
 	}
 
 private:
@@ -133,7 +139,7 @@ public:
 		/* scrolls instead of squashing, so the dock fits (and docks into) any area */
 		auto *layout = new QVBoxLayout(ctd::scrollBody(this));
 		layout->setSpacing(10);
-		layout->addLayout(ctdHeader(this, "obs-plugin-64.png", "CTD Hub"));
+		layout->addLayout(ctdHeader(this, "obs-plugin-64.png", uiText("Hub.Title")));
 
 		/* H9: the profile and its status */
 		auto *top = new QHBoxLayout();
@@ -141,12 +147,10 @@ public:
 		/* a long profile or scene name shortens in the box rather than widening the dock */
 		profile_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
 		profile_->setMinimumContentsLength(10);
-		auto *manage = new QPushButton("Manage…", this);
+		auto *manage = new QPushButton(uiText("Hub.Manage"), this);
 		/* S16: the sync clip, for a source's sync check; opens in the browser, to show on a phone or a screen */
-		auto *clip = new QPushButton("Sync clip", this);
-		clip->setToolTip(
-			"A white flash and a beep once a second. Show it in front of a camera, then run the sync "
-			"check in that source's properties.");
+		auto *clip = new QPushButton(uiText("Hub.SyncClip"), this);
+		clip->setToolTip(uiText("Hub.SyncClip.Tooltip"));
 		connect(clip, &QPushButton::clicked, this, [] {
 			char *file = obs_module_file("sync-clip.html");
 			if (file)
@@ -166,12 +170,12 @@ public:
 
 		/* H12 */
 		auto *addAllRow = new QHBoxLayout();
-		addAll_ = new QPushButton("Add all live streams", this);
+		addAll_ = new QPushButton(uiText("Hub.AddAllLive"), this);
 		grid_ = new QComboBox(this);
-		grid_->addItem("as they are", 0);
-		grid_->addItem("in a 2×2 grid", 2);
-		grid_->addItem("in a 3×3 grid", 3);
-		grid_->addItem("in a 4×4 grid", 4);
+		grid_->addItem(uiText("Hub.Grid.AsTheyAre"), 0);
+		grid_->addItem(uiText("Hub.Grid.2x2"), 2);
+		grid_->addItem(uiText("Hub.Grid.3x3"), 3);
+		grid_->addItem(uiText("Hub.Grid.4x4"), 4);
 		ctd::button(addAll_, ctd::Role::Primary);
 		addAllRow->addWidget(addAll_);
 		addAllRow->addWidget(grid_, 1);
@@ -179,7 +183,7 @@ public:
 
 		/* H13: off unless ticked, per profile */
 		auto *autoRow = new QHBoxLayout();
-		autoAdd_ = new QCheckBox("Auto-add new live streams to", this);
+		autoAdd_ = new QCheckBox(uiText("Hub.AutoAdd"), this);
 		autoScene_ = new QComboBox(this);
 		autoScene_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
 		autoScene_->setMinimumContentsLength(8);
@@ -188,7 +192,7 @@ public:
 		layout->addLayout(autoRow);
 
 		/* H8: only when the profile allows changing the server */
-		createPath_ = ctd::button(new QPushButton("Create path…", this), ctd::Role::Hot);
+		createPath_ = ctd::button(new QPushButton(uiText("Hub.CreatePath"), this), ctd::Role::Hot);
 		layout->addWidget(createPath_);
 		action_ = new QLabel(this);
 		action_->setWordWrap(true);
@@ -196,8 +200,10 @@ public:
 
 		/* H10 */
 		table_ = new QTableWidget(0, ColCount, this);
-		table_->setHorizontalHeaderLabels(
-			{"", "Stream", "Publisher", "Tracks", "Bitrate", "Link", "Issues", "In CTD OBS"});
+		table_->setHorizontalHeaderLabels({"", uiText("Hub.Column.Stream"), uiText("Hub.Column.Publisher"),
+						   uiText("Hub.Column.Tracks"), uiText("Hub.Column.Bitrate"),
+						   uiText("Hub.Column.Link"), uiText("Hub.Column.Issues"),
+						   uiText("Hub.Column.InObs")});
 		table_->verticalHeader()->setVisible(false);
 		table_->setSelectionBehavior(QAbstractItemView::SelectRows);
 		table_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -211,7 +217,7 @@ public:
 		layout->addWidget(table_, 1);
 
 		/* D2: the issues panel; hover one for its likely cause */
-		layout->addWidget(ctd::eyebrow("Issues", this));
+		layout->addWidget(ctd::eyebrow(uiText("Hub.Issues"), this));
 		issues_ = new QListWidget(this);
 		issues_->setMinimumHeight(48);
 		issues_->setMaximumHeight(110);
@@ -238,11 +244,13 @@ public:
 		});
 
 		/* S15: the sync groups, each with its members' lock state, timecode, offset and delay; hidden while none */
-		syncLabel_ = ctd::eyebrow("Sync groups", this);
+		syncLabel_ = ctd::eyebrow(uiText("Hub.SyncGroups"), this);
 		layout->addWidget(syncLabel_);
 		sync_ = new QTreeWidget(this);
 		sync_->setColumnCount(5);
-		sync_->setHeaderLabels({"Group / source", "State", "Timecode", "Offset", "Delay"});
+		sync_->setHeaderLabels({uiText("Hub.Sync.Column.Group"), uiText("Hub.Sync.Column.State"),
+					uiText("Hub.Sync.Column.Timecode"), uiText("Hub.Sync.Column.Offset"),
+					uiText("Hub.Sync.Column.Delay")});
 		sync_->setRootIsDecorated(true);
 		sync_->setMinimumHeight(70);
 		sync_->setMaximumHeight(140);
@@ -469,8 +477,7 @@ private:
 			pass = s.api_pass;
 			token = s.api_token;
 		} else {
-			action_->setText(s.allow_writes ? "This profile has no API URL."
-							: "This profile doesn't allow changing the server (Manage…).");
+			action_->setText(uiText(s.allow_writes ? "Hub.NoApiUrl" : "Hub.NoWrites"));
 		}
 		ctd_server_free(&s);
 		return ok;
@@ -490,11 +497,10 @@ private:
 			const struct mtx_api_server api = {host.c_str(), port,    user.c_str(), pass.c_str(),
 							   nullptr,      nullptr, token.c_str()};
 			const enum mtx_api_status status = call(api);
-			const QString text =
-				status == MTX_API_OK             ? done
-				: status == MTX_API_UNAUTHORIZED ? "The server refused: this API login can't change it."
-				: status == MTX_API_NOT_FOUND    ? "The server doesn't have that."
-								 : "The server refused or couldn't be reached.";
+			const QString text = status == MTX_API_OK             ? done
+					     : status == MTX_API_UNAUTHORIZED ? uiText("Hub.Write.Unauthorized")
+					     : status == MTX_API_NOT_FOUND    ? uiText("Hub.Write.NotFound")
+									      : uiText("Hub.Write.Failed");
 			blog(status == MTX_API_OK ? LOG_INFO : LOG_WARNING, "[CTD] hub: %s %s",
 			     done.toUtf8().constData(), status == MTX_API_OK ? "(done)" : "(failed)");
 			QMetaObject::invokeMethod(
@@ -514,14 +520,13 @@ private:
 		const auto info = publishers_.find(path);
 		if (info == publishers_.end() || info->second.second.empty())
 			return;
-		if (QMessageBox::question(this, "CTD OBS",
-					  QString("Disconnect the publisher of \"%1\"? A camera app normally reconnects "
-						  "on its own.")
-						  .arg(QString::fromStdString(path))) != QMessageBox::Yes)
+		if (QMessageBox::question(this, uiText("Common.DialogTitle"),
+					  uiText("Hub.Kick.Question").arg(QString::fromStdString(path))) !=
+		    QMessageBox::Yes)
 			return;
 		const std::string type = info->second.first, id = info->second.second;
-		runWrite(QString("Kicking the publisher of \"%1\"…").arg(QString::fromStdString(path)),
-			 QString("Kicked the publisher of \"%1\".").arg(QString::fromStdString(path)),
+		runWrite(uiText("Hub.Kick.Doing").arg(QString::fromStdString(path)),
+			 uiText("Hub.Kick.Done").arg(QString::fromStdString(path)),
 			 [type, id](const struct mtx_api_server &api) {
 				 return mtx_api_kick(&api, type.c_str(), id.c_str());
 			 });
@@ -529,33 +534,30 @@ private:
 
 	void removePath(const std::string &path)
 	{
-		if (QMessageBox::question(
-			    this, "CTD OBS",
-			    QString("Remove \"%1\" from the server's configuration? (Until MediaMTX restarts, "
-				    "for paths in mediamtx.yml.)")
-				    .arg(QString::fromStdString(path))) != QMessageBox::Yes)
+		if (QMessageBox::question(this, uiText("Common.DialogTitle"),
+					  uiText("Hub.Remove.Question").arg(QString::fromStdString(path))) !=
+		    QMessageBox::Yes)
 			return;
-		runWrite(QString("Removing \"%1\"…").arg(QString::fromStdString(path)),
-			 QString("Removed \"%1\".").arg(QString::fromStdString(path)),
+		runWrite(uiText("Hub.Remove.Doing").arg(QString::fromStdString(path)),
+			 uiText("Hub.Remove.Done").arg(QString::fromStdString(path)),
 			 [path](const struct mtx_api_server &api) { return mtx_api_delete_path(&api, path.c_str()); });
 	}
 
 	void createPath()
 	{
 		bool ok = false;
-		const QString name =
-			QInputDialog::getText(this, "CTD OBS",
-					      "New path name (letters, digits, _ - . ~ /):", QLineEdit::Normal,
-					      QString(), &ok)
-				.trimmed();
+		const QString name = QInputDialog::getText(this, uiText("Common.DialogTitle"),
+							   uiText("Hub.Create.Prompt"), QLineEdit::Normal, QString(),
+							   &ok)
+					     .trimmed();
 		if (!ok || name.isEmpty())
 			return;
 		const std::string path = name.toStdString();
 		if (!mtx_path_name_valid(path.c_str())) {
-			action_->setText("That isn't a valid path name.");
+			action_->setText(uiText("Hub.Create.Invalid"));
 			return;
 		}
-		runWrite(QString("Creating \"%1\"…").arg(name), QString("Created \"%1\".").arg(name),
+		runWrite(uiText("Hub.Create.Doing").arg(name), uiText("Hub.Create.Done").arg(name),
 			 [path](const struct mtx_api_server &api) {
 				 return mtx_api_add_path(&api, path.c_str(), false);
 			 });
@@ -688,7 +690,7 @@ private:
 			table_->insertRow(row);
 			auto *dot = new QTableWidgetItem(s.live ? "●" : "○");
 			dot->setForeground(s.live ? ctd::magenta() : ctd::inkMuted()); /* magenta: on air */
-			dot->setToolTip(s.live ? "Live" : "Nothing publishing");
+			dot->setToolTip(uiText(s.live ? "Hub.Live" : "Hub.NothingPublishing"));
 			table_->setItem(row, ColLive, dot);
 			table_->setItem(row, ColName, new QTableWidgetItem(qs(s.name)));
 			QString publisher = protocolName(qs(s.publisher));
@@ -699,19 +701,15 @@ private:
 			table_->setCellWidget(row, ColBitrate, new Sparkline(h, table_));
 			QString link;
 			if (s.has_link) {
-				link = QString("%1 ms · %2% loss")
-					       .arg((int)std::lround(s.rtt_ms))
-					       .arg(s.loss_percent, 0, 'f', 1);
+				link = uiText("Hub.Link").arg((int)std::lround(s.rtt_ms)).arg(s.loss_percent, 0, 'f', 1);
 				auto *item = new QTableWidgetItem(link);
-				item->setToolTip(
-					QString("Round trip %1 ms\nLost %2% over the last poll\nRetransmitted %3, "
-						"dropped %4\nReceiving %5 Mbps of a %6 Mbps link")
-						.arg(s.rtt_ms, 0, 'f', 1)
-						.arg(s.loss_percent, 0, 'f', 2)
-						.arg(s.retransmits)
-						.arg(s.dropped)
-						.arg(s.receive_mbps, 0, 'f', 2)
-						.arg(s.link_capacity_mbps, 0, 'f', 1));
+				item->setToolTip(uiText("Hub.Link.Tooltip")
+							 .arg(s.rtt_ms, 0, 'f', 1)
+							 .arg(s.loss_percent, 0, 'f', 2)
+							 .arg(s.retransmits)
+							 .arg(s.dropped)
+							 .arg(s.receive_mbps, 0, 'f', 2)
+							 .arg(s.link_capacity_mbps, 0, 'f', 1));
 				if (s.loss_percent >= 2.0)
 					item->setForeground(ctd::magenta());
 				table_->setItem(row, ColLink, item);
@@ -733,10 +731,10 @@ private:
 				table_->insertRow(row);
 				auto *dot = new QTableWidgetItem("✕");
 				dot->setForeground(ctd::tallyRed());
-				dot->setToolTip("Path not on server");
+				dot->setToolTip(uiText("Hub.PathNotOnServer"));
 				table_->setItem(row, ColLive, dot);
 				table_->setItem(row, ColName, new QTableWidgetItem(QString::fromStdString(path)));
-				auto *gone = new QTableWidgetItem("Path not on server");
+				auto *gone = new QTableWidgetItem(uiText("Hub.PathNotOnServer"));
 				gone->setForeground(ctd::tallyRed());
 				table_->setItem(row, ColPublisher, gone);
 				table_->setItem(row, ColInObs, new QTableWidgetItem(inObsText(&in)));
@@ -781,7 +779,7 @@ private:
 	/* D4: one fix, off the UI thread (a kick talks to the server); the outcome in the action line */
 	void applyFix(const QString &issue, const QString &action)
 	{
-		action_->setText("Applying…");
+		action_->setText(uiText("Hub.Applying"));
 		QPointer<QLabel> label = action_;
 		const std::string issueId = issue.toStdString(), actionId = action.toStdString();
 		std::thread([label, issueId, actionId] {
@@ -794,7 +792,8 @@ private:
 					if (!link.isEmpty())
 						QApplication::clipboard()->setText(link);
 					if (label)
-						label->setText(link.isEmpty() ? text : text + " (copied)");
+						label->setText(link.isEmpty() ? text
+									      : text + " " + uiText("Hub.Copied"));
 				},
 				Qt::QueuedConnection);
 		}).detach();
@@ -823,20 +822,24 @@ private:
 				lost |= sync_state_lost(v.members[m].state);
 				locked &= v.members[m].state == SYNC_LOCKED;
 			}
-			top->setText(1, lost ? "sync lost" : locked ? "locked" : "working");
-			top->setText(2, v.mode == SYNC_FIXED_LATENCY ? QString("fixed %1 ms").arg(v.fixed_latency_ms)
-								     : QString("align to slowest"));
-			top->setText(4, QString("max %1 ms").arg(v.max_delay_ms));
+			top->setText(1, uiText(lost     ? "Hub.Sync.Lost"
+					       : locked ? "Hub.Sync.Locked"
+							: "Hub.Sync.Working"));
+			top->setText(2, v.mode == SYNC_FIXED_LATENCY ? uiText("Hub.Sync.Fixed").arg(v.fixed_latency_ms)
+								     : uiText("Hub.Sync.AlignToSlowest"));
+			top->setText(4, uiText("Hub.Sync.Max").arg(v.max_delay_ms));
 			if (lost)
 				top->setForeground(1, ctd::magenta());
 			for (int m = 0; m < v.count; m++) {
 				const struct ctd_sync_member_view &mv = v.members[m];
 				auto *item = new QTreeWidgetItem(top);
-				item->setText(0, QString::fromUtf8(mv.source) + (mv.reference ? " (reference)" : ""));
+				item->setText(0,
+					      QString::fromUtf8(mv.source) +
+						      (mv.reference ? " " + uiText("Hub.Sync.Reference") : QString()));
 				item->setText(1, sync_state_name(mv.state));
 				item->setText(2, mv.timecode[0] ? QString::fromUtf8(mv.timecode) : QString("—"));
-				item->setText(3, QString("%1 ms").arg(mv.offset_ms, 0, 'f', 0));
-				item->setText(4, QString("%1 ms").arg(mv.delay_ms, 0, 'f', 0));
+				item->setText(3, uiText("Common.Ms").arg(mv.offset_ms, 0, 'f', 0));
+				item->setText(4, uiText("Common.Ms").arg(mv.delay_ms, 0, 'f', 0));
 				if (sync_state_lost(mv.state))
 					item->setForeground(1, ctd::magenta());
 			}
@@ -856,9 +859,8 @@ private:
 				label += QString("  ▸ %1").arg(qs(x.actions[0].label));
 			auto *item = new QListWidgetItem(label, issues_);
 			item->setForeground(x.applied_fix ? ctd::inkMuted() : severityColor(x.severity));
-			item->setToolTip(
-				qs(x.cause) +
-				(x.action_count ? "\n\nRight-click for fixes; double-click applies the first." : ""));
+			item->setToolTip(qs(x.cause) +
+					 (x.action_count ? "\n\n" + uiText("Hub.Issue.FixHint") : QString()));
 			/* D4: what the item can do */
 			QStringList actions;
 			for (int a = 0; a < x.action_count; a++)
@@ -867,7 +869,7 @@ private:
 			item->setData(Qt::UserRole + 1, actions);
 		}
 		if (!issues.count)
-			new QListWidgetItem("No issues", issues_);
+			new QListWidgetItem(uiText("Hub.NoIssues"), issues_);
 	}
 
 	static QString inObsText(const InObs *in)
@@ -877,7 +879,7 @@ private:
 		QStringList scenes;
 		for (const std::string &scene : in->scenes)
 			scenes << QString::fromStdString(scene);
-		return scenes.isEmpty() ? "in CTD OBS, in no scene" : scenes.join(", ");
+		return scenes.isEmpty() ? uiText("Hub.InObsNoScene") : scenes.join(", ");
 	}
 
 	void showStatus(const struct mtx_poll_snapshot &snap)
@@ -888,23 +890,23 @@ private:
 		switch (snap.status) {
 		case MTX_API_OK:
 			status_->setText(
-				QString("Connected%1 · %2 ms · %3 streams, %4 live")
+				uiText("Hub.Status.Connected")
 					.arg(*snap.version ? QString(" · MediaMTX %1").arg(qs(snap.version)) : "")
 					.arg(snap.latency_ms)
 					.arg(snap.count)
 					.arg(live));
 			break;
 		case MTX_API_UNKNOWN:
-			status_->setText("Looking for the server…");
+			status_->setText(uiText("Hub.Status.Looking"));
 			break;
 		case MTX_API_UNAUTHORIZED:
-			status_->setText("API login failed: check the profile's API login (Manage…)");
+			status_->setText(uiText("Hub.Status.Unauthorized"));
 			break;
 		case MTX_API_NOT_FOUND:
-			status_->setText("No MediaMTX API: give the profile its API URL (Manage…) to list streams");
+			status_->setText(uiText("Hub.Status.NoApi"));
 			break;
 		default:
-			status_->setText("API unreachable. The sources keep playing; this list comes back on its own.");
+			status_->setText(uiText("Hub.Status.Unreachable"));
 			break;
 		}
 	}
@@ -1040,8 +1042,9 @@ private:
 			return;
 		const bool inObs = inObs_.count(path) > 0;
 		QMenu menu(this);
-		menu.addAction("Add to current scene", [this, path] { addToScene(path, currentScene(), 0, 0, 0); });
-		QMenu *to = menu.addMenu("Add to scene");
+		menu.addAction(uiText("Hub.Menu.AddToCurrent"),
+			       [this, path] { addToScene(path, currentScene(), 0, 0, 0); });
+		QMenu *to = menu.addMenu(uiText("Hub.Menu.AddToScene"));
 		struct obs_frontend_source_list scenes = {};
 		obs_frontend_get_scenes(&scenes);
 		for (size_t i = 0; i < scenes.sources.num; i++) {
@@ -1054,7 +1057,7 @@ private:
 			});
 		}
 		obs_frontend_source_list_free(&scenes);
-		QMenu *copy = menu.addMenu("Copy publish URL");
+		QMenu *copy = menu.addMenu(uiText("Hub.Menu.CopyUrl"));
 		copy->addAction("SRT", [this, path] { copyPublishUrl(path, "srt"); });
 		copy->addAction("RTMP", [this, path] { copyPublishUrl(path, "rtmp"); });
 		copy->addAction("WHIP (WebRTC)", [this, path] { copyPublishUrl(path, "whip"); });
@@ -1065,14 +1068,16 @@ private:
 		if (writes) {
 			menu.addSeparator();
 			const auto pub = publishers_.find(path);
-			menu.addAction("Kick publisher…", [this, path] {
+			menu.addAction(uiText("Hub.Menu.Kick"), [this, path] {
 				    kickPublisher(path);
 			    })->setEnabled(pub != publishers_.end() && !pub->second.second.empty());
-			menu.addAction("Remove path from the server…", [this, path] { removePath(path); });
+			menu.addAction(uiText("Hub.Menu.RemovePath"), [this, path] { removePath(path); });
 		}
 		menu.addSeparator();
-		menu.addAction("Reconnect", [this, path] { reconnect(path); })->setEnabled(inObs);
-		menu.addAction("Open properties", [this, path] { openProperties(path); })->setEnabled(inObs);
+		menu.addAction(uiText("Hub.Menu.Reconnect"), [this, path] { reconnect(path); })->setEnabled(inObs);
+		menu.addAction(uiText("Hub.Menu.Properties"), [this, path] {
+			    openProperties(path);
+		    })->setEnabled(inObs);
 		menu.exec(table_->viewport()->mapToGlobal(pos));
 	}
 
@@ -1106,5 +1111,5 @@ private:
 extern "C" void ctd_hub_dock_register(void)
 {
 	auto *main = static_cast<QWidget *>(obs_frontend_get_main_window());
-	obs_frontend_add_dock_by_id("ctd-hub", "CTD Hub", new HubDock(main));
+	obs_frontend_add_dock_by_id("ctd-hub", obs_module_text("Hub.Title"), new HubDock(main));
 }
