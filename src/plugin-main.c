@@ -20,6 +20,7 @@ OBS_MODULE_USE_DEFAULT_LOCALE("obs-ctd-live-source", "en-US")
 #include "obs/sync-groups.h"
 #include "obs/webhook.h"
 #include "show/show.h"
+#include "obs/ctd-settings.h"
 
 extern struct obs_source_info ctd_live_source_info;
 extern struct obs_source_info ctd_live_audio_source_info;
@@ -37,6 +38,7 @@ bool obs_module_load(void)
 {
 	/* file downloads (http_get_file) use libcurl; the call is counted, OBS makes its own */
 	curl_global_init(CURL_GLOBAL_DEFAULT);
+	ctd_settings_init(); /* before anything reads a settings file: CTD OBS's CTD folder (gap 17) */
 	servers_init(); /* before any source is created */
 	obs_register_source(&ctd_live_source_info);
 	obs_register_source(&ctd_live_audio_source_info);
@@ -69,5 +71,6 @@ void obs_module_unload(void)
 	ms_shutdown();
 	mtx_pollers_shutdown(); /* the sources are gone by now; anything else still holding one */
 	servers_shutdown();
+	ctd_settings_shutdown();
 	curl_global_cleanup();
 }
