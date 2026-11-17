@@ -14,9 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: no-plugin-26, os: macos-26, no_plugin: '1', lldb: '' }
-          - { name: plugin-lldb-26, os: macos-26, no_plugin: '', lldb: '1' }
-          - { name: plugin-15, os: macos-15, no_plugin: '', lldb: '' }
+          - { name: plugin-lldb2-26, os: macos-26, no_plugin: '', lldb: '1' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -31,6 +29,9 @@ jobs:
           SMOKE_LLDB: ${{ matrix.lldb }}
         run: |
           sw_vers
+          system_profiler SPDisplaysDataType || true
+          ls -la /Library/ColorSync/Profiles ~/Library/ColorSync/Profiles 2>&1 || true
+          defaults read -g AppleInterfaceStyle 2>&1 || true
           bash test/macos-smoke.sh "$(find "${{ runner.temp }}/plugin" -type f | head -n 1)" || true
           echo '--- obs-stdout tail'; tail -n 200 test/out/macos/obs-stdout.log
       - uses: actions/upload-artifact@v4

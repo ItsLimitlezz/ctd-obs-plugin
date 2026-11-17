@@ -160,11 +160,17 @@ echo '::group::Run OBS'
 if [[ -n "${SMOKE_LLDB:-}" ]]; then
   printf '%s\n' \
     'breakpoint set -r "^QWidget::setCursor"' \
-    'breakpoint command add -o "bt 12" 1' \
+    'breakpoint command add -o "bt 3" -o "memory read -s4 -fd -c2 -- *(void**)$x1" 1' \
     'breakpoint set -n "QImage::toCGImage() const"' \
-    'breakpoint command add -o "bt 16" 2' \
-    'breakpoint modify --auto-continue true 1 2' > "${work}/lldb.cmds"
+    'breakpoint command add -o "bt 16" -o "memory read -s8 -fx -c4 -- $x0" -o "breakpoint enable 3" 2' \
+    'breakpoint set -r "^CGColorSpace(Create|Retain)|^CGImageCreate$|^CGDisplayCopyColorSpace|^CGColorSpaceCopy"' \
+    'breakpoint command add -o "bt 4" -o "register read x0 x1 x2 x5" 3' \
+    'breakpoint disable 3' \
+    'breakpoint modify --auto-continue true 1 2 3' > "${work}/lldb.cmds"
   lldb --batch -s "${work}/lldb.cmds" -o run -k "bt 30" -k "register read" -k "frame select 6" -k "register read" \
+    -k 'disassemble -n "QImage::toCGImage() const"' -k "frame select 7" -k "disassemble -f" -k "frame select 8" \
+    -k "disassemble -f" -k "frame select 9" -k "disassemble -f" -k "frame select 10" -k "disassemble -f" \
+    -k "frame select 14" -k "disassemble -f" -k "image list" \
     -k "quit 1" -- "${work}/OBS.app/Contents/MacOS/OBS" --disable-updater --disable-shutdown-check --multi \
     > "${out}/obs-stdout.log" 2>&1 &
 else
