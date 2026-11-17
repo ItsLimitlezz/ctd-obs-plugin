@@ -6,18 +6,27 @@ permissions:
   contents: read
   actions: read
 jobs:
-  probe:
-    name: probe ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
+  disasm:
+    runs-on: macos-26
+    steps:
+      - name: Disassemble the crashing frames
+        run: |
+          curl -fsSL -o obs.dmg https://github.com/obsproject/obs-studio/releases/download/32.2.2/OBS-Studio-32.2.2-macOS-Apple.dmg
+          hdiutil attach -nobrowse -quiet -mountpoint "$PWD/m" obs.dmg
+          A="$PWD/m/OBS.app/Contents"
+          find "$A" -name 'libqcocoa.dylib' -o -name QtGui -type f | head
+          QCOCOA="$(find "$A" -name libqcocoa.dylib | head -n 1)"
+          QTGUI="$(find "$A" -path '*QtGui.framework*' -name QtGui -type f | head -n 1)"
+          QTW="$(find "$A" -path '*QtWidgets.framework*' -name QtWidgets -type f | head -n 1)"
+          echo "::group::OBS"; lldb --batch "$A/MacOS/OBS" -o 'image list' -o 'disassemble -s 0x10027485c -c 30' -o 'disassemble -s 0x100271d78 -c 70' -o 'disassemble -s 0x10026c7e0 -c 240' -o 'disassemble -s 0x10021f9a0 -c 120'; echo "::endgroup::"
+          echo "::group::QtGui"; lldb --batch "$QTGUI" -o 'image list' -o 'disassemble -n "QImage::toCGImage() const"' -o 'disassemble -s 0x3b0198 -c 60'; echo "::endgroup::"
+          echo "::group::qcocoa"; lldb --batch "$QCOCOA" -o 'image list' -o 'disassemble -s 0x14198 -c 140' -o 'disassemble -s 0x13c30 -c 170' -o 'disassemble -s 0x13bec -c 20'; echo "::endgroup::"
+          echo "::group::QtWidgets"; lldb --batch "$QTW" -o 'disassemble -s 0x52b84 -c 200'; echo "::endgroup::"
+          defaults read com.apple.universalaccess 2>&1 | head -30 || true
+          defaults read -g 2>&1 | grep -i -E 'cursor|mouse|AppleICU' | head || true
+  rosetta:
+    runs-on: macos-26
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: srgb-26, os: macos-26, srgb: '1' }
-          - { name: info-26, os: macos-26, srgb: '' }
-          - { name: plugin-14, os: macos-14, srgb: '' }
-          - { name: plugin-15-intel, os: macos-15-intel, srgb: '' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -26,16 +35,14 @@ jobs:
           path: ${{ runner.temp }}/plugin
           run-id: 42745575547
           github-token: ${{ github.token }}
-      - name: Probe
+      - name: Intel OBS under Rosetta on arm64
+        env:
+          SMOKE_OBS_INTEL: '1'
         run: |
-          sw_vers
-          ls -laR /Library/ColorSync/Profiles/Displays 2>&1 || true
-          for f in /Library/ColorSync/Profiles/Displays/*/* /Library/ColorSync/Profiles/Displays/*; do [ -f "$f" ] && { echo "== $f"; strings -n 6 "$f" | head -20; }; done || true
-          swift test/macos/display-srgb.swift ${{ matrix.srgb == '1' && '--set' || '' }} || echo "swift failed $?"
+          /usr/bin/pgrep -q oahd && echo "Rosetta running" || echo "Rosetta not running"
           bash test/macos-smoke.sh "$(find "${{ runner.temp }}/plugin" -type f | head -n 1)" || true
-          echo '--- obs-stdout tail'; tail -n 20 test/out/macos/obs-stdout.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: probe-${{ matrix.name }}
+          name: probe-rosetta
           path: test/out/macos/

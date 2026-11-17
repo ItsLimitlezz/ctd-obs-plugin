@@ -40,6 +40,7 @@ arch="$(uname -m)"
 dmg_arch=Apple
 mtx_arch=arm64
 if [[ "${arch}" == x86_64 ]]; then dmg_arch=Intel; mtx_arch=amd64; fi
+if [[ -n "${SMOKE_OBS_INTEL:-}" ]]; then dmg_arch=Intel; fi
 curl -fsSL -o "${work}/obs.dmg" \
   "https://github.com/obsproject/obs-studio/releases/download/${obs_version}/OBS-Studio-${obs_version}-macOS-${dmg_arch}.dmg"
 hdiutil attach -nobrowse -quiet -mountpoint "${work}/obs-dmg" "${work}/obs.dmg"
@@ -174,7 +175,7 @@ if [[ -n "${SMOKE_LLDB:-}" ]]; then
     -k "quit 1" -- "${work}/OBS.app/Contents/MacOS/OBS" --disable-updater --disable-shutdown-check --multi \
     > "${out}/obs-stdout.log" 2>&1 &
 else
-  "${work}/OBS.app/Contents/MacOS/OBS" --disable-updater --disable-shutdown-check --multi > "${out}/obs-stdout.log" 2>&1 &
+  ${SMOKE_OBS_INTEL:+arch -x86_64} "${work}/OBS.app/Contents/MacOS/OBS" --disable-updater --disable-shutdown-check --multi > "${out}/obs-stdout.log" 2>&1 &
 fi
 obs_pid=$!
 
