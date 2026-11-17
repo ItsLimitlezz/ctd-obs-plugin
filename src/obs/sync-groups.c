@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include "ctd-settings.h"
 
 #define TICK_MS 100
 #define MAX_GROUPS 16
@@ -49,14 +50,10 @@ static struct {
 
 /* ---------------------------------------------------------------- storage -- */
 
+/* CTD OBS's CTD settings folder, or the plugin's own config folder (ctd-settings.c) */
 static char *config_file(void)
 {
-	char *dir = obs_module_config_path("");
-	if (dir) {
-		os_mkdirs(dir);
-		bfree(dir);
-	}
-	return obs_module_config_path("sync-groups.json");
+	return ctd_settings_path("sync-groups.json");
 }
 
 /* call with the mutex held: a group's settings into its controller */
