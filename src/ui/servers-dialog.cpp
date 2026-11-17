@@ -333,7 +333,21 @@ extern "C" void ctd_servers_dialog_open(void)
 	dialog.exec();
 }
 
+/* void ctd_servers_dialog_open(): CTD OBS's CTD menu opens the window through this. UI thread only. */
+static void procOpen(void *, calldata_t *)
+{
+	ctd_servers_dialog_open();
+}
+
 extern "C" void ctd_servers_dialog_register(void)
 {
-	obs_frontend_add_tools_menu_item("CTD Live servers…", openFromMenu, nullptr);
+	proc_handler_t *ph = obs_get_proc_handler();
+	proc_handler_add(ph, "void ctd_servers_dialog_open()", procOpen, nullptr);
+
+	/* CTD OBS registers ctd_menu_available before modules load: its CTD menu has this window, so Tools doesn't */
+	calldata_t cd = {0};
+	const bool ctdMenu = proc_handler_call(ph, "ctd_menu_available", &cd) && calldata_bool(&cd, "available");
+	calldata_free(&cd);
+	if (!ctdMenu)
+		obs_frontend_add_tools_menu_item("CTD Live servers…", openFromMenu, nullptr);
 }
