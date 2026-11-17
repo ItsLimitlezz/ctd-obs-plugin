@@ -19,6 +19,7 @@
 #include <QComboBox>
 #include <QDateTime>
 #include <QDesktopServices>
+#include <QDockWidget>
 #include <QFontDatabase>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -27,6 +28,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
+#include <QPointer>
 #include <QPushButton>
 #include <QTextBrowser>
 #include <QTimer>
@@ -435,6 +437,27 @@ public:
 		QObject::connect(clockTimer, &QTimer::timeout, this, [this] { showClock(); });
 		clockTimer->start(40); /* a little faster than the frames, so the frame count doesn't stutter */
 		refresh();
+	}
+
+	/* ctd_relay_show_pairing (CTD OBS's first-run step): the dock in view, ready for CTD Relay's address */
+	void showPairing()
+	{
+		for (QWidget *w = parentWidget(); w; w = w->parentWidget()) {
+			if (auto *dock = qobject_cast<QDockWidget *>(w)) {
+				dock->setVisible(true);
+				dock->raise();
+				dock->activateWindow();
+				break;
+			}
+		}
+		struct ms_snapshot s;
+		ms_snapshot_get(&s);
+		const bool linked = s.link != MS_DISCONNECTED;
+		ms_snapshot_free(&s);
+		if (!linked) {
+			server_->setFocus(Qt::OtherFocusReason);
+			server_->selectAll();
+		}
 	}
 
 private:
@@ -1095,10 +1118,23 @@ private:
 
 } // namespace
 
+static QPointer<MultiStreamDock> relayDock;
+
+/* void ctd_relay_show_pairing(): UI thread only (CTD OBS's first-run step calls it) */
+static void procShowPairing(void *, calldata_t *)
+{
+	if (relayDock)
+		relayDock->showPairing();
+}
+
 extern "C" void ctd_multistream_dock_register(void)
 {
 	auto *main = static_cast<QWidget *>(obs_frontend_get_main_window());
 	auto *dock = new MultiStreamDock(main);
-	if (!obs_frontend_add_dock_by_id("ctd-multistream", "CTD Relay", dock))
+	if (!obs_frontend_add_dock_by_id("ctd-multistream", "CTD Relay", dock)) {
 		delete dock;
+		return;
+	}
+	relayDock = dock;
+	proc_handler_add(obs_get_proc_handler(), "void ctd_relay_show_pairing()", procShowPairing, nullptr);
 }
