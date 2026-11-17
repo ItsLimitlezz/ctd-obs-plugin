@@ -301,7 +301,7 @@ static void *player_thread(void *opaque)
 		if (!pb->ready) {
 			if (!decode_next(pb) || !render(pb)) {
 				blog(LOG_WARNING,
-				     "[ctd-live:%s] the card video %s stopped: no more pictures could be decoded",
+				     "[CTD] live-source: %s: the card video %s stopped: no more pictures could be decoded",
 				     pb->source_name, pb->path);
 				playback_close(pb);
 				pb = NULL;
@@ -380,7 +380,8 @@ bool loss_video_play(struct loss_video *video, const char *path, uint32_t width,
 	if (!pb) {
 		loss_video_stop(video);
 		if (!video->failed_path || strcmp(video->failed_path, path) != 0) {
-			blog(LOG_WARNING, "[ctd-live:%s] can't play the card video %s (%s): showing the built-in card",
+			blog(LOG_WARNING,
+			     "[CTD] live-source: %s: can't play the card video %s (%s): showing the built-in card",
 			     source_name, path, why);
 			bfree(video->failed_path);
 			video->failed_path = bstrdup(path);

@@ -159,10 +159,10 @@ static obs_data_t *issue_data(const struct condition *c)
 static void announce(const struct condition *c, bool raised)
 {
 	if (raised)
-		blog(c->severity == ISSUE_INFO ? LOG_INFO : LOG_WARNING, "[ctd-live] issue (%s): %s. %s",
+		blog(c->severity == ISSUE_INFO ? LOG_INFO : LOG_WARNING, "[CTD] live-source: issue (%s): %s. %s",
 		     issue_severity_name(c->severity), c->title, c->cause);
 	else
-		blog(LOG_INFO, "[ctd-live] issue cleared: %s (after %lld s)", c->title,
+		blog(LOG_INFO, "[CTD] live-source: issue cleared: %s (after %lld s)", c->title,
 		     (long long)((c->last_seen_ms - c->first_seen_ms) / 1000));
 	obs_data_t *data = issue_data(c);
 	ws_vendor_emit(raised ? "IssueRaised" : "IssueCleared", data);
@@ -574,10 +574,11 @@ static void source_rules(const struct feed *f, uint64_t now)
 	/* Audio clipping: more than 1% of samples at full scale */
 	if (has_audio && f->clipped_percent > 1.0) {
 		dstr_printf(&title, "Audio clipping on %s", f->name);
-		dstr_printf(&cause,
-			    "%.1f%% of the samples hit full scale: the sound distorts. The gain is set too high "
-			    "upstream (the mic or the camera app); turning it down in OBS won't undo the distortion.",
-			    f->clipped_percent);
+		dstr_printf(
+			&cause,
+			"%.1f%% of the samples hit full scale: the sound distorts. The gain is set too high "
+			"upstream (the mic or the camera app); turning it down in CTD OBS won't undo the distortion.",
+			f->clipped_percent);
 		const struct observation o = {"audio-clipping", ISSUE_INFO,  f->name,     f->server_id,
 					      f->path,          title.array, cause.array, 10};
 		observe(&o, now);
@@ -766,7 +767,7 @@ static void tick(void)
 	for (size_t i = 0; i < fix_count; i++) {
 		char message[256];
 		if (issues_apply(fixes[i].issue_id, fixes[i].action_id, message, sizeof(message), NULL, 0))
-			blog(LOG_INFO, "[ctd-live] auto-fix: %s", message);
+			blog(LOG_INFO, "[CTD] live-source: auto-fix: %s", message);
 	}
 	bfree(fixes);
 
@@ -938,7 +939,7 @@ static void record_fix(const char *source, const char *server_id, const char *pa
 	c->undo_value = previous;
 	engine.seq++;
 	pthread_mutex_unlock(&engine.mutex);
-	blog(LOG_INFO, "[ctd-live] fix applied: %s", title);
+	blog(LOG_INFO, "[CTD] live-source: fix applied: %s", title);
 }
 
 bool issues_apply(const char *issue_id, const char *action_id, char *message, size_t message_size, char *url,
@@ -1052,7 +1053,7 @@ bool issues_apply(const char *issue_id, const char *action_id, char *message, si
 			}
 		}
 		pthread_mutex_unlock(&engine.mutex);
-		blog(LOG_INFO, "[ctd-live] %s", message);
+		blog(LOG_INFO, "[CTD] live-source: %s", message);
 		return true;
 	}
 
@@ -1111,7 +1112,7 @@ bool issues_kick(const char *server_id, const char *path, char *message, size_t 
 			 : *id ? "Couldn't kick the publisher of \"%s\"."
 			       : "Nothing is publishing to \"%s\".",
 			 path);
-		blog(ok ? LOG_INFO : LOG_WARNING, "[ctd-live] %s", message);
+		blog(ok ? LOG_INFO : LOG_WARNING, "[CTD] live-source: %s", message);
 	}
 	ctd_server_free(&s);
 	return ok;

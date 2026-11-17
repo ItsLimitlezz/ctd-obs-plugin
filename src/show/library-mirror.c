@@ -193,7 +193,7 @@ static enum http_status ensure_file(const struct lib_entry *e, const char *api_b
 	char got[65] = "";
 	enum http_status status = http_get_file(url.array, token, part.array, got, run_interrupt, NULL, run);
 	if (status == HTTP_OK && strcmp(got, e->sha256) != 0) {
-		blog(LOG_WARNING, "[ctd-live] Library mirror: \"%s\" did not match its hash, skipped", e->name);
+		blog(LOG_WARNING, "[CTD] show: Library mirror: \"%s\" did not match its hash, skipped", e->name);
 		status = HTTP_BAD_RESPONSE;
 	}
 	if (status == HTTP_OK && os_rename(part.array, path.array) != 0)
@@ -236,7 +236,7 @@ static void write_index(const char *profile, const struct lib_entry_list *list)
 	struct dstr path = {0};
 	file_path(&path, INDEX_FILE);
 	if (!obs_data_save_json_safe(index, path.array, "tmp", NULL))
-		blog(LOG_WARNING, "[ctd-live] Library mirror: couldn't write the index");
+		blog(LOG_WARNING, "[CTD] show: Library mirror: couldn't write the index");
 	dstr_free(&path);
 	obs_data_release(index);
 }
@@ -280,10 +280,10 @@ static void sync_library(const char *api_base, const char *token, const char *pr
 		if (status != HTTP_ABORTED && !run_interrupt(&run)) {
 			/* the cache stays as it is: what was mirrored keeps working offline */
 			if (status == HTTP_FORBIDDEN)
-				blog(LOG_INFO, "[ctd-live] Library mirror: this CTD Relay connection can't read the "
+				blog(LOG_INFO, "[CTD] show: Library mirror: this CTD Relay connection can't read the "
 					       "library (pair again to enable Show Profiles)");
 			else
-				blog(LOG_WARNING, "[ctd-live] Library mirror: couldn't read the library: %s",
+				blog(LOG_WARNING, "[CTD] show: Library mirror: couldn't read the library: %s",
 				     http_status_text(status));
 		}
 		list_free(&list);
@@ -315,7 +315,7 @@ static void sync_library(const char *api_base, const char *token, const char *pr
 		downloaded += fetched;
 		if (status != HTTP_OK) {
 			failed++;
-			blog(LOG_WARNING, "[ctd-live] Library mirror: couldn't fetch \"%s\": %s", e->name,
+			blog(LOG_WARNING, "[CTD] show: Library mirror: couldn't fetch \"%s\": %s", e->name,
 			     http_status_text(status));
 			refused = status == HTTP_UNAUTHORIZED || status == HTTP_FORBIDDEN || status == HTTP_UNREACHABLE;
 		}
@@ -324,7 +324,7 @@ static void sync_library(const char *api_base, const char *token, const char *pr
 	write_index(profile, &list);
 	const int removed = remove_stale(&list);
 	if (downloaded || removed || failed)
-		blog(LOG_INFO, "[ctd-live] Library mirror: %d in the library, %d downloaded, %d removed, %d failed",
+		blog(LOG_INFO, "[CTD] show: Library mirror: %d in the library, %d downloaded, %d removed, %d failed",
 		     (int)list.count, downloaded, removed, failed);
 	list_free(&list);
 }

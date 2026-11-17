@@ -591,7 +591,7 @@ static bool start_save(const char *id, const char *name, bool create)
 	bfree(profile);
 	if (!ok) {
 		bfree(job);
-		show_set_message(true, "Can't find OBS's current scene collection and profile.");
+		show_set_message(true, "Can't find CTD OBS's current scene collection and profile.");
 		show_set_busy(SHOW_IDLE);
 		return false;
 	}
