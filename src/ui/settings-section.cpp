@@ -4,6 +4,10 @@
  * state as the CTD Relay dock (src/multistream.c), so both always agree; the dock keeps the live status and the show
  * actions.
  *
+ * Nothing here waits for Settings' OK: Connect / Disconnect, the profile and sharing act at once, like the dock. The
+ * address only takes effect through Connect (it's read-only while connected), so editing it and pressing Cancel never
+ * unpairs, and Return in it means Connect, not the dialog's OK.
+ *
  * void ctd_settings_widget(in ptr parent, out ptr widget)
  *     Makes the section as a child of parent (a QWidget *). UI thread only. CTD OBS's settings page calls it.
  */
@@ -14,6 +18,8 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDesktopServices>
+#include <QEvent>
+#include <QKeyEvent>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -86,8 +92,7 @@ public:
 		layout->addWidget(hub);
 
 		QObject::connect(connect_, &QPushButton::clicked, this, [this] { connectClicked(); });
-		QObject::connect(server_, &QLineEdit::editingFinished, this,
-				 [this] { ms_set_server(server_->text().trimmed().toUtf8().constData()); });
+		server_->installEventFilter(this); /* Return = Connect, not Settings' OK */
 		QObject::connect(approve_, &QPushButton::clicked, this,
 				 [this] { QDesktopServices::openUrl(QUrl(approveUrl_)); });
 		QObject::connect(profile_, QOverload<int>::of(&QComboBox::activated), this, [this](int index) {
@@ -102,9 +107,26 @@ public:
 		refresh();
 	}
 
+protected:
+	bool eventFilter(QObject *watched, QEvent *event) override
+	{
+		if (watched == server_ && event->type() == QEvent::KeyPress) {
+			const int key = static_cast<QKeyEvent *>(event)->key();
+			if (key == Qt::Key_Return || key == Qt::Key_Enter) {
+				if (!server_->isReadOnly())
+					connectClicked();
+				return true;
+			}
+		}
+		return QWidget::eventFilter(watched, event);
+	}
+
 private:
 	void refresh()
 	{
+		/* an open profile drop-down is left alone; the change shows once it closes */
+		if (profile_->view()->isVisible())
+			return;
 		struct ms_snapshot s;
 		ms_snapshot_get(&s);
 		if (s.seq != lastSeq_) {
@@ -117,8 +139,9 @@ private:
 
 	void showConnection(const ms_snapshot &s)
 	{
-		if (!server_->hasFocus())
+		if (!server_->hasFocus() || s.link != MS_DISCONNECTED)
 			server_->setText(QString::fromUtf8(s.server));
+		server_->setReadOnly(s.link != MS_DISCONNECTED);
 		status_->setText(QString::fromUtf8(s.message));
 		approveUrl_ = QString::fromUtf8(s.approve_url);
 		approve_->setVisible(s.link == MS_PAIRING && !approveUrl_.isEmpty());
@@ -143,7 +166,7 @@ private:
 			obs_data_release(p);
 		}
 		const QString current = QString::fromUtf8(s.profile_id);
-		if ((labels == labels_ && ids == ids_ && current == current_) || profile_->view()->isVisible())
+		if (labels == labels_ && ids == ids_ && current == current_)
 			return;
 		labels_ = labels;
 		ids_ = ids;
