@@ -149,7 +149,7 @@ bool ctdVerticalStreaming()
 	return active;
 }
 
-const char *const kStopStreamingReason = "Stop streaming to change where CTD OBS sends its stream.";
+const char *const kStopStreamingReason = "Stop streaming to change where this PC streams to.";
 
 /* Sets the vertical canvas's stream output (custom RTMP) and saves it; no dialog. False with a reason on failure. */
 bool setCtdVerticalOutput(const QString &server, const QString &key, QString &error)
@@ -177,8 +177,8 @@ bool obsMultitrackEnabled()
 }
 
 const char *const kMultitrackWarning =
-	"CTD OBS's Twitch Dual Format / multitrack video is on: the stream goes straight to Twitch and isn't private, even "
-	"in test mode. Turn it off in CTD OBS's Settings → Stream.";
+	"Twitch Dual Format (multitrack video) is on: that stream goes straight to Twitch and isn't private, even in "
+	"test mode. Turn it off in Settings → Stream.";
 
 /* Keyframe interval 2 s on the main stream encoder (Relay warns about long keyframes). Only the keyint_sec of the
  * advanced-output encoder is touched; simple output already uses 2 s. Returns true when the setting is now 2 s. */
@@ -292,15 +292,15 @@ public:
 		profile_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
 		profile_->setMinimumContentsLength(10);
 		profileRow->setRowWrapPolicy(QFormLayout::WrapLongRows);
-		profileRow->addRow("This CTD OBS goes to", profile_);
+		profileRow->addRow("This PC streams to", profile_);
 		layout->addLayout(profileRow);
 		/* API v1.6: CTD Live mobile reaches OBS through the hub, only when the user says so (it shares a password) */
 		shareObsws_ = new QCheckBox(this);
 		shareObsws_->setToolTip(
-			"Sends CTD OBS's WebSocket settings (Tools > WebSocket Server Settings), password "
+			"Sends this PC's WebSocket settings (Tools > WebSocket Server Settings), password "
 			"included, to CTD Relay, and keeps them current. Untick to make CTD Relay forget them.");
 		layout->addLayout(ctd::wrappingCheckBox(
-			shareObsws_, "Let CTD Live mobile control this CTD OBS through CTD Relay", this));
+			shareObsws_, "Let CTD Live Mobile control CTD OBS on this PC through CTD Relay", this));
 		shareStatus_ = new QLabel(this);
 		shareStatus_->setWordWrap(true);
 		layout->addWidget(shareStatus_);
@@ -488,8 +488,8 @@ private:
 			const QString server = server_->text().trimmed();
 			QString detail =
 				QString("CTD Relay (%1) gets CTD OBS's WebSocket password and this PC's address, so CTD "
-					"Live mobile can switch scenes and start or stop the stream through it. "
-					"Anyone who can sign in to CTD Relay can then control this CTD OBS.")
+					"Live Mobile can switch scenes and start or stop the stream through it. "
+					"Anyone who can sign in to CTD Relay can then control CTD OBS on this PC.")
 					.arg(server.isEmpty() ? QString("this server") : server);
 			if (server.startsWith("https://", Qt::CaseInsensitive))
 				detail +=

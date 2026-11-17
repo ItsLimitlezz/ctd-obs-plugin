@@ -260,7 +260,7 @@ static bool stage(struct apply_job *job, char *err, size_t err_size)
 		sscanf(obs_get_version_string(), "%d.%d.%d", &x, &y, &z);
 		if (a > x || (a == x && (bb > y || (bb == y && c > z)))) {
 			char line[200];
-			snprintf(line, sizeof(line), "Saved with CTD OBS %s, newer than this CTD OBS (%s).", from,
+			snprintf(line, sizeof(line), "Saved with CTD OBS %s, newer than this version (%s).", from,
 				 obs_get_version_string());
 			warn(job, line);
 		}
