@@ -260,6 +260,10 @@ talks to for everything after OBS:
 5. **Overlays** lists the profile's overlays from CTD Overlay. **Add to current scene** creates a browser source at
    the overlay's size. After a profile change, **Switch existing to this profile** points those sources at the new
    profile's matching overlays (same slot and canvas), so the scenes carry over. Nothing is ever deleted.
+   An overlay with several scenes (starting soon, BRB, ending…) shows a picker under the list: **Whole overlay
+   (follows the show)**, or one scene, added as its own source named `CTD · <overlay> · <scene>` that stays on that
+   scene. Switching keeps each source on its scene. Needs a CTD Overlay that publishes
+   its scenes (`meta.scenes` on its CTD Relay resources); with an older one only the whole overlay is offered.
 6. With API v1.4 the plugin also tells CTD Relay what OBS is doing, for its other apps such as CTD Live
    mobile: each CTD source's state (live, stalled, reconnecting, no signal, and how long a gap lasted) with its fps,
    size and lateness every 5 s, the main stream, recording and Aitum Vertical outputs going live, reconnecting or

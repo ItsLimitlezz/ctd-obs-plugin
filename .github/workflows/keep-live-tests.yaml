@@ -1,0 +1,32 @@
+name: Keep Scenes Live Tests
+on:
+  pull_request:
+    paths:
+      - src/obs/keep-live-core.*
+      - test/keep-live/**
+      - .github/workflows/keep-live-tests.yaml
+  push:
+    branches: [main]
+    paths:
+      - src/obs/keep-live-core.*
+      - test/keep-live/**
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    name: ctd-keep-live-tests (${{ matrix.os }}) 🧪
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run the lease bookkeeping tests 🧪
+        shell: bash
+        run: |
+          cmake -S test/keep-live -B build-keep-live-tests -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-keep-live-tests --config Debug
+          ctest --test-dir build-keep-live-tests -C Debug --output-on-failure
