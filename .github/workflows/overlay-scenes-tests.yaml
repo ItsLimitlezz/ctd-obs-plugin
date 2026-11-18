@@ -1,0 +1,32 @@
+name: Overlay Scenes Tests
+on:
+  pull_request:
+    paths:
+      - src/overlay-scenes.*
+      - test/overlay-scenes/**
+      - .github/workflows/overlay-scenes-tests.yaml
+  push:
+    branches: [main]
+    paths:
+      - src/overlay-scenes.*
+      - test/overlay-scenes/**
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    name: ctd-overlay-scenes (${{ matrix.os }}) 🧪
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run the pure-logic tests 🧪
+        shell: bash
+        run: |
+          cmake -S test/overlay-scenes -B build-overlay-scenes-tests -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-overlay-scenes-tests --config Debug
+          ctest --test-dir build-overlay-scenes-tests -C Debug --output-on-failure
