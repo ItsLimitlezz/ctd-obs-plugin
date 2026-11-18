@@ -262,8 +262,7 @@ talks to for everything after OBS:
    profile's matching overlays (same slot and canvas), so the scenes carry over. Nothing is ever deleted.
    An overlay with several scenes (starting soon, BRB, ending…) shows a picker under the list: **Whole overlay
    (follows the show)**, or one scene, added as its own source named `CTD · <overlay> · <scene>` that stays on that
-   scene. **Add each scene to the OBS scene with its name** puts each scene into the OBS scene of its canvas with the
-   same name ("Starting Soon", "BRB"). Switching keeps each source on its scene. Needs a CTD Overlay that publishes
+   scene. Switching keeps each source on its scene. Needs a CTD Overlay that publishes
    its scenes (`meta.scenes` on its CTD Relay resources); with an older one only the whole overlay is offered.
 6. With API v1.4 the plugin also tells CTD Relay what OBS is doing, for its other apps such as CTD Live
    mobile: each CTD source's state (live, stalled, reconnecting, no signal, and how long a gap lasted) with its fps,
