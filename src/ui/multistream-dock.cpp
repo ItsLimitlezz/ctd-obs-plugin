@@ -90,6 +90,7 @@ QString overlaySlot(obs_data_t *overlay)
 struct OverlayScene {
 	QString id;
 	QString name;
+	std::string url; /* its own browser-source URL when CTD Overlay gives one; else the overlay's with scene=<id> */
 };
 
 /* meta.scenes, the ones with an id; empty when the overlay offers no choice (one scene, or an older CTD Overlay) */
@@ -104,7 +105,7 @@ std::vector<OverlayScene> overlayScenes(obs_data_t *overlay)
 		const QString id = str(scene, "id");
 		const QString name = str(scene, "name");
 		if (!id.isEmpty())
-			out.push_back({id, name.isEmpty() ? id : name});
+			out.push_back({id, name.isEmpty() ? id : name, obs_data_get_string(scene, "url")});
 		obs_data_release(scene);
 	}
 	obs_data_array_release(scenes);
@@ -112,9 +113,14 @@ std::vector<OverlayScene> overlayScenes(obs_data_t *overlay)
 	return out;
 }
 
-/* the overlay's URL showing only `scene` (the whole overlay when it is empty) */
+/* the overlay's URL showing only `scene` (the whole overlay when it is empty): the scene's own url from meta.scenes,
+ * else the overlay's url with scene=<id> set (SKP 04 §4.9) */
 std::string overlaySceneUrl(obs_data_t *overlay, const QString &scene)
 {
+	if (!scene.isEmpty())
+		for (const OverlayScene &s : overlayScenes(overlay))
+			if (s.id == scene && !s.url.empty())
+				return s.url;
 	const QByteArray id = scene.toUtf8();
 	char *url = ctd_overlay_scene_url(obs_data_get_string(overlay, "url"), id.isEmpty() ? nullptr : id.constData());
 	std::string out = url ? url : obs_data_get_string(overlay, "url");
@@ -399,15 +405,10 @@ public:
 		auto *overlayButtons = new QVBoxLayout();
 		overlayButtons->setSpacing(6);
 		addOverlay_ = new QPushButton(uiText("Relay.AddOverlay"), overlaysBox);
-		addScenesByName_ = new QPushButton(uiText("Relay.AddScenesByName"), overlaysBox);
-		addScenesByName_->setToolTip(uiText("Relay.AddScenesByNameTip"));
-		addScenesByName_->setVisible(false);
 		switchOverlays_ = new QPushButton(uiText("Relay.SwitchOverlays"), overlaysBox);
 		ctd::button(addOverlay_);
-		ctd::button(addScenesByName_);
 		ctd::button(switchOverlays_);
 		overlayButtons->addWidget(addOverlay_);
-		overlayButtons->addWidget(addScenesByName_);
 		overlayButtons->addWidget(switchOverlays_);
 		overlaysLayout->addLayout(overlayButtons);
 		template_ = new QLineEdit(overlaysBox);
@@ -465,14 +466,6 @@ public:
 			if (overlay)
 				addOverlay(overlay, overlayScene_->count() > 0 ? overlayScene_->currentData().toString()
 									       : QString());
-			else
-				QMessageBox::information(this, uiText("Common.DialogTitle"),
-							 uiText("Relay.PickOverlayFirst"));
-		});
-		QObject::connect(addScenesByName_, &QPushButton::clicked, this, [this] {
-			obs_data_t *overlay = selectedOverlay();
-			if (overlay)
-				addScenesByName(overlay);
 			else
 				QMessageBox::information(this, uiText("Common.DialogTitle"),
 							 uiText("Relay.PickOverlayFirst"));
@@ -683,7 +676,6 @@ private:
 		connected_ = connected;
 		updateRoute();
 		addOverlay_->setEnabled(connected);
-		addScenesByName_->setEnabled(connected);
 		switchOverlays_->setEnabled(connected);
 		ask_->setEnabled(connected && s.overlay_request != MS_OVERLAY_SENDING &&
 				 s.overlay_request != MS_OVERLAY_WAITING);
@@ -861,7 +853,6 @@ private:
 		}
 		overlayScene_->blockSignals(false);
 		overlayScene_->setVisible(choice);
-		addScenesByName_->setVisible(choice);
 	}
 
 	void showChat(const ms_snapshot &s)
@@ -1115,109 +1106,6 @@ private:
 		obs_source_release(sceneSource);
 	}
 
-	/* Is a source in `scene` already showing this overlay's scene `sceneId` (same slot and canvas, else same name)? */
-	static bool sceneHasOverlay(obs_scene_t *scene, obs_data_t *overlay, const QString &sceneId)
-	{
-		struct Find {
-			QString slot, canvas, name, scene;
-			bool found = false;
-		} find{overlaySlot(overlay), overlayCanvas(overlay), str(overlay, "name"), sceneId};
-		obs_scene_enum_items(
-			scene,
-			[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
-				auto *f = static_cast<Find *>(param);
-				obs_source_t *source = obs_sceneitem_get_source(item);
-				if (strcmp(obs_source_get_unversioned_id(source), "browser_source") != 0)
-					return true;
-				obs_data_t *priv = obs_source_get_private_settings(source);
-				const QString slot = str(priv, kOverlaySlot);
-				const bool same = (!slot.isEmpty() && !f->slot.isEmpty()
-							   ? slot == f->slot && str(priv, kOverlayCanvas) == f->canvas
-							   : str(priv, kOverlayName) == f->name) &&
-						  str(priv, kOverlayScene) == f->scene;
-				obs_data_release(priv);
-				f->found = same;
-				return !same;
-			},
-			&find);
-		return find.found;
-	}
-
-	/* Each of the overlay's scenes into the OBS scenes of its canvas with the same name ("Starting Soon" for the
-	 * scene "Starting Soon" or "starting"; letters and digits only, any case). An OBS scene that already shows that
-	 * scene of the overlay is left alone. */
-	void addScenesByName(obs_data_t *overlay)
-	{
-		const std::vector<OverlayScene> scenes = overlayScenes(overlay);
-		if (scenes.size() < 2) {
-			action_->setText(uiText("Relay.Overlay.NoScenes"));
-			return;
-		}
-		/* the OBS scenes of the overlay's canvas: the main one's, or the vertical canvas's */
-		struct Collect {
-			std::vector<obs_source_t *> scenes; /* strong references */
-		} collect;
-		const bool vertical = overlayCanvas(overlay) == "vertical";
-		obs_canvas_t *canvas = vertical ? findVerticalCanvas() : nullptr;
-		if (vertical && !canvas) {
-			action_->setText(uiText("Relay.Overlay.NoVerticalCanvasByName"));
-			return;
-		}
-		if (canvas) {
-			obs_canvas_enum_scenes(
-				canvas,
-				[](void *param, obs_source_t *source) {
-					static_cast<Collect *>(param)->scenes.push_back(obs_source_get_ref(source));
-					return true;
-				},
-				&collect);
-			obs_canvas_release(canvas);
-		} else {
-			struct obs_frontend_source_list list = {};
-			obs_frontend_get_scenes(&list);
-			for (size_t i = 0; i < list.sources.num; i++)
-				collect.scenes.push_back(obs_source_get_ref(list.sources.array[i]));
-			obs_frontend_source_list_free(&list);
-		}
-
-		int added = 0, already = 0;
-		QStringList missing;
-		for (const OverlayScene &scene : scenes) {
-			const QByteArray id = scene.id.toUtf8(), name = scene.name.toUtf8();
-			bool matched = false;
-			for (obs_source_t *source : collect.scenes) {
-				obs_scene_t *obsScene = obs_scene_from_source(source);
-				if (!source || !obsScene ||
-				    !ctd_overlay_scene_matches(obs_source_get_name(source), id.constData(),
-							       name.constData()))
-					continue;
-				matched = true;
-				if (sceneHasOverlay(obsScene, overlay, scene.id)) {
-					already++;
-					continue;
-				}
-				const std::string added_name = addOverlaySource(obsScene, overlay, scene.id);
-				if (added_name.empty())
-					continue;
-				added++;
-				blog(LOG_INFO, "[CTD] relay: added overlay '%s', scene %s, to the OBS scene '%s'",
-				     added_name.c_str(), id.constData(), obs_source_get_name(source));
-			}
-			if (!matched)
-				missing << scene.name;
-		}
-		for (obs_source_t *source : collect.scenes)
-			obs_source_release(source);
-
-		QString text = added ? uiText("Relay.Overlay.ScenesByNameAdded").arg(added)
-				     : uiText("Relay.Overlay.ScenesByNameNone");
-		if (already)
-			text += " " + uiText("Relay.Overlay.ScenesByNameAlready").arg(already);
-		if (!missing.isEmpty())
-			text += " " + uiText("Relay.Overlay.ScenesByNameMissing").arg(missing.join(", "));
-		action_->setText(text);
-	}
-
 	/* H21: browser sources showing one of the hub's overlays now show this profile's equivalent (meta.slot +
 	 * meta.canvas; by name when the overlay has no slot), on the same scene of it (ctd_overlay_scene). A source
 	 * pinned to a scene the equivalent overlay doesn't have is left as it is. Never deletes anything. */
@@ -1302,7 +1190,6 @@ private:
 	QListWidget *overlays_;
 	QComboBox *overlayScene_;
 	QPushButton *addOverlay_;
-	QPushButton *addScenesByName_;
 	QPushButton *switchOverlays_;
 	QLineEdit *template_;
 	QComboBox *askCanvas_;
