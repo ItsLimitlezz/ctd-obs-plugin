@@ -1,6 +1,6 @@
 /*
  * The CTD plugin's part of CTD OBS's Settings ▸ CTD page (integration gap 7): connecting and pairing with CTD Relay,
- * which profile this CTD OBS goes to, sharing the WebSocket settings, the CTD Hub servers, and whether CTD apps may keep
+ * which profile this CTD OBS goes to, sharing the WebSocket settings, the feed servers, and whether CTD apps may keep
  * their multiview scenes live (src/obs/keep-live.h). It works on the same state as the CTD Relay dock
  * (src/multistream.c), so both always agree; the dock keeps the live status and the show actions.
  *
@@ -82,15 +82,15 @@ public:
 		form->addRow(QString(), shareStatus_);
 		layout->addWidget(relay);
 
-		/* CTD Hub: the MediaMTX servers the CTD Live sources read from */
-		auto *hub = new QGroupBox(text("Settings.Hub.Title"), this);
-		auto *hubLayout = new QVBoxLayout(hub);
-		auto *hubText = new QLabel(text("Settings.Hub.Text"), hub);
-		hubText->setWordWrap(true);
-		hubLayout->addWidget(hubText);
-		auto *servers = new QPushButton(text("Settings.Hub.Servers"), hub);
-		hubLayout->addWidget(servers, 0, Qt::AlignLeft);
-		layout->addWidget(hub);
+		/* incoming feeds belong to CTD Relay too: the feed servers (MediaMTX) the CTD Live sources read from */
+		auto *feedsText = new QLabel(text("Settings.Feeds.Text"), relay);
+		feedsText->setWordWrap(true);
+		auto *servers = new QPushButton(text("Settings.Feeds.Servers"), relay);
+		auto *feedsRow = new QHBoxLayout();
+		feedsRow->addWidget(servers);
+		feedsRow->addStretch(1);
+		form->addRow(feedsText);
+		form->addRow(feedsRow);
 
 		/* CTD apps: KeepScenesLive (bug B1) */
 		auto *apps = new QGroupBox(text("Settings.Apps.Title"), this);

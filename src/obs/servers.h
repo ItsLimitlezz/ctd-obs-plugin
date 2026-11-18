@@ -33,7 +33,7 @@ struct ctd_server {
 	char *passphrase; /* SRT encryption passphrase, 10 to 79 characters, or empty */
 	char *webhook_url; /* I4: events about this server's feeds are POSTed here; empty for none. May hold a token: secret */
 	bool is_default;
-	bool allow_writes; /* H8: the CTD Hub may create and remove paths and kick publishers on this server */
+	bool allow_writes; /* H8: the CTD Relay · Feeds dock may create and remove paths and kick publishers on this server */
 };
 
 void servers_init(void);
@@ -57,9 +57,13 @@ typedef void (*servers_changed_fn)(void *param, const char *id);
 void servers_watch(servers_changed_fn fn, void *param);
 void servers_unwatch(servers_changed_fn fn, void *param);
 
-/* src/ui/servers-dialog.cpp: the Tools ▸ CTD Hub servers window (UI thread only). */
+/* src/ui/servers-dialog.cpp: the Feed servers window (UI thread only). */
 void ctd_servers_dialog_register(void);
 void ctd_servers_dialog_open(void);
+
+/* src/ui/feeds-dock.cpp: the "CTD Relay · Feeds" dock (incoming feeds, issues, sync groups). UI thread only. */
+void ctd_feeds_dock_register(void);
+void ctd_feeds_dock_show(void);
 
 #ifdef __cplusplus
 }

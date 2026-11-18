@@ -76,7 +76,7 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       src/show/sync.c
       src/show/tar.c
       src/ui/device-map-dialog.cpp
-      src/ui/hub-dock.cpp
+      src/ui/feeds-dock.cpp
       src/ui/multistream-dock.cpp
       src/ui/servers-dialog.cpp
       src/ui/settings-section.cpp
@@ -169,7 +169,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ctd-engine)
 
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/plugin-main.c src/obs/ctd-live-source.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/loss-card.c src/obs/loss-video.c src/api/mediamtx-api.c)
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/api/poller.c src/ui/hub-dock.cpp src/obs/ws-vendor.c)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/api/poller.c src/ui/feeds-dock.cpp src/obs/ws-vendor.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/issues.c src/obs/sync-groups.c src/obs/webhook.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/obs-watch.c src/obs/servers.c src/ui/servers-dialog.cpp)
 # A source per CTD Overlay scene in the CTD Relay dock; pure C, tested on its own: test/overlay-scenes
