@@ -140,8 +140,8 @@ static bool stage_hook(void *opaque, struct show_stage_ctx *ctx, char *err, size
 			const cj *e = cj_at(mapping, i);
 			const char *status = cj_get_str(e, "status");
 			if (strcmp(status, SHOW_DEVICE_MISSING) == 0) {
-				warn(ctx->warnings, "%s: no matching device on this machine (was %s).",
-				     cj_get_str(e, "label"), cj_get_str(e, "was"));
+				warn(ctx->warnings, obs_module_text("DeviceMap.Msg.NoMatch"), cj_get_str(e, "label"),
+				     cj_get_str(e, "was"));
 				need++;
 			} else if (strcmp(status, SHOW_DEVICE_SUGGESTED) == 0 ||
 				   cj_get_bool(e, "rememberedMissing", false)) {
@@ -150,7 +150,7 @@ static bool stage_hook(void *opaque, struct show_stage_ctx *ctx, char *err, size
 		}
 		if (need) {
 			char line[160];
-			snprintf(line, sizeof(line), "%d device(s) need a look: use Devices… to pick them.", need);
+			snprintf(line, sizeof(line), obs_module_text("DeviceMap.Msg.NeedLook"), need);
 			cj_append(ctx->warnings, cj_new_string(line));
 		}
 		cj_free(candidates);
@@ -394,7 +394,7 @@ bool show_devices_choose(const char *id, const char *slot, const char *device_id
 	const cj *device = find_device(manifest, slot);
 	cj *map = NULL, *aliases = NULL;
 	if (!device) {
-		snprintf(err, err_size, "That source isn't part of the show profile loaded now.");
+		snprintf(err, err_size, "%s", obs_module_text("DeviceMap.Msg.NotInProfile"));
 		goto done;
 	}
 	show_machine_name(machine, sizeof(machine));
@@ -404,7 +404,7 @@ bool show_devices_choose(const char *id, const char *slot, const char *device_id
 		obs_source_t *source = obs_get_source_by_uuid(slot);
 		if (!source || !devices_identity_keys(type, &id_key, &name_key) || !id_key) {
 			obs_source_release(source);
-			snprintf(err, err_size, "That source is gone from the scene collection.");
+			snprintf(err, err_size, "%s", obs_module_text("DeviceMap.Msg.SourceGone"));
 			goto done;
 		}
 		/* straight to the source: not a switch, so allowed while live (design section 5) */
@@ -421,7 +421,7 @@ bool show_devices_choose(const char *id, const char *slot, const char *device_id
 		map = cj_new_object();
 	show_devices_remember(map, slot, device_id, device_name);
 	if (!show_store_write_device_map(id, machine, map)) {
-		snprintf(err, err_size, "Couldn't save this machine's device map.");
+		snprintf(err, err_size, "%s", obs_module_text("DeviceMap.Msg.SaveFailed"));
 		goto done;
 	}
 	if (device_id && *device_id) {

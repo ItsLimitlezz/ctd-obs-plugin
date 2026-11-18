@@ -325,7 +325,7 @@ inline void repolish(QWidget *widget)
 
 inline void setWarning(QWidget *label, bool warning, const char *normalRole)
 {
-	label->setProperty("ctdRole", warning       ? QVariant(QStringLiteral("warning"))
+	label->setProperty("ctdRole", warning      ? QVariant(QStringLiteral("warning"))
 				      : normalRole ? QVariant(QString::fromLatin1(normalRole))
 						   : QVariant());
 	repolish(label);

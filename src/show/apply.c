@@ -52,7 +52,7 @@ static bool check_output(void *param, obs_output_t *output)
 	if (!obs_output_active(output))
 		return true;
 	c->active = true;
-	snprintf(c->reason, c->size, "Stop the \"%s\" output first.", obs_output_get_name(output));
+	snprintf(c->reason, c->size, obs_module_text("Show.Guard.StopOutput"), obs_output_get_name(output));
 	return false;
 }
 
@@ -60,13 +60,13 @@ bool show_guard_idle(char *reason, size_t size)
 {
 	const char *why = NULL;
 	if (obs_frontend_streaming_active())
-		why = "Stop streaming first.";
+		why = obs_module_text("Show.Guard.StopStreaming");
 	else if (obs_frontend_recording_active())
-		why = "Stop recording first.";
+		why = obs_module_text("Show.Guard.StopRecording");
 	else if (obs_frontend_replay_buffer_active())
-		why = "Stop the replay buffer first.";
+		why = obs_module_text("Show.Guard.StopReplayBuffer");
 	else if (obs_frontend_virtualcam_active())
-		why = "Stop the virtual camera first.";
+		why = obs_module_text("Show.Guard.StopVirtualCamera");
 	if (why) {
 		if (reason && size)
 			snprintf(reason, size, "%s", why);
@@ -116,9 +116,10 @@ static bool core_apply(const char *collection_path, const char *profile_path, ch
 		calldata_get_string(&cd, "error", &error);
 	}
 	if (!found)
-		snprintf(err, err_size, "This PC can't switch show profiles (the CTD OBS core is missing).");
+		snprintf(err, err_size, "%s", obs_module_text("Show.Msg.NoCore"));
 	else if (!success)
-		snprintf(err, err_size, "CTD OBS refused to load it: %s", error && *error ? error : "no reason given");
+		snprintf(err, err_size, obs_module_text("Show.Msg.CoreRefused"),
+			 error && *error ? error : obs_module_text("Show.Msg.NoReason"));
 	calldata_free(&cd);
 	return found && success;
 }
@@ -185,7 +186,7 @@ static bool asset_path_for(void *opaque, const cj *asset, char *out, size_t size
 	struct resolve_ctx *r = opaque;
 	const char *sha = cj_get_str(asset, "sha256"), *name = cj_get_str(asset, "name");
 	if (!show_store_has_asset(sha, name, cj_get_int(asset, "size", -1))) {
-		snprintf(r->err, sizeof(r->err), "the file %s isn't on this machine yet", name ? name : sha);
+		snprintf(r->err, sizeof(r->err), obs_module_text("Show.Msg.AssetMissing"), name ? name : sha);
 		return false;
 	}
 	if (!show_store_asset_path(sha, name, out, size))
@@ -232,8 +233,7 @@ static cj *pick_service(struct apply_job *job, const struct show_bundle *b)
 			cj_set_str(cj_get_or_add_object(out, "settings"), "server", server);
 	} else if (bundle_service) {
 		out = cj_clone(bundle_service);
-		warn(job, "The stream key isn't saved on this machine: enter it in Settings > Stream (or link the show "
-			  "profile to CTD Relay).");
+		warn(job, obs_module_text("Show.Warn.StreamKey"));
 	}
 	cj_free(bundle_service);
 	return out;
@@ -260,7 +260,7 @@ static bool stage(struct apply_job *job, char *err, size_t err_size)
 		sscanf(obs_get_version_string(), "%d.%d.%d", &x, &y, &z);
 		if (a > x || (a == x && (bb > y || (bb == y && c > z)))) {
 			char line[200];
-			snprintf(line, sizeof(line), "Saved with CTD OBS %s, newer than this version (%s).", from,
+			snprintf(line, sizeof(line), obs_module_text("Show.Warn.NewerObs"), from,
 				 obs_get_version_string());
 			warn(job, line);
 		}
@@ -270,7 +270,7 @@ static bool stage(struct apply_job *job, char *err, size_t err_size)
 	struct resolve_ctx r = {job, ""};
 	if (!show_assets_resolve(b.collection, b.manifest, asset_path_for, &r, err, err_size)) {
 		if (r.err[0])
-			snprintf(err, err_size, "Can't switch: %s.", r.err);
+			snprintf(err, err_size, obs_module_text("Show.Msg.CantSwitch"), r.err);
 		goto done;
 	}
 
@@ -282,8 +282,7 @@ static bool stage(struct apply_job *job, char *err, size_t err_size)
 			job->needs_reentry++;
 	if (job->needs_reentry) {
 		char line[160];
-		snprintf(line, sizeof(line), "%d setting(s) hold a password or key that isn't saved on this machine.",
-			 job->needs_reentry);
+		snprintf(line, sizeof(line), obs_module_text("Show.Warn.Reentry"), job->needs_reentry);
 		warn(job, line);
 	}
 	cj_free(missing);
@@ -311,7 +310,7 @@ static bool stage(struct apply_job *job, char *err, size_t err_size)
 	/* write the staged files */
 	sfs_remove_tree(job->staging);
 	if (!sfs_mkdirs(job->staged_profile)) {
-		snprintf(err, err_size, "Can't write in %.400s.", job->staging);
+		snprintf(err, err_size, obs_module_text("Show.Msg.CantWrite"), job->staging);
 		goto done;
 	}
 	text = cj_print(b.collection, true);
@@ -369,7 +368,7 @@ static bool stage(struct apply_job *job, char *err, size_t err_size)
 	goto done;
 
 write_failed:
-	snprintf(err, err_size, "Can't write the staged files (disk full?).");
+	snprintf(err, err_size, "%s", obs_module_text("Show.Msg.WriteFailed"));
 done:
 	cj_free_str(text);
 	cj_free(service);
@@ -407,13 +406,11 @@ static void rollback(struct apply_job *job, const char *why, bool reload)
 				    core_apply(job->prev_collection_path, job->prev_profile_path, err, sizeof(err)));
 	char message[2048];
 	if (restored)
-		snprintf(message, sizeof(message), "Couldn't switch to %s: %.600s Your previous setup is back.",
-			 job->name, why);
+		snprintf(message, sizeof(message), obs_module_text("Show.Msg.RolledBack"), job->name, why);
 	else
-		snprintf(message, sizeof(message),
-			 "Couldn't switch to %s: %.600s Then the previous setup couldn't be reloaded (%.250s): pick "
-			 "\"%.250s\" in Scene Collection and \"%.250s\" in Profile.",
-			 job->name, why, err[0] ? err : "not found", job->prev_collection_name, job->prev_profile_name);
+		snprintf(message, sizeof(message), obs_module_text("Show.Msg.RollbackFailed"), job->name, why,
+			 err[0] ? err : obs_module_text("Show.Msg.NotFound"), job->prev_collection_name,
+			 job->prev_profile_name);
 	sfs_remove_tree(job->staging);
 	fail_job(job, message);
 }
@@ -427,25 +424,26 @@ static bool verify(struct apply_job *job, char *why, size_t size)
 	bfree(collection);
 	bfree(profile);
 	if (!names) {
-		snprintf(why, size, "CTD OBS didn't load it.");
+		snprintf(why, size, "%s", obs_module_text("Show.Verify.NotLoaded"));
 		return false;
 	}
 	for (size_t i = 0; i < cj_size(job->uuids); i++) {
 		obs_source_t *source = obs_get_source_by_uuid(cj_str(cj_at(job->uuids, i)));
 		if (!source) {
-			snprintf(why, size, "a source is missing after loading (%s).", cj_str(cj_at(job->uuids, i)));
+			snprintf(why, size, obs_module_text("Show.Verify.SourceMissing"), cj_str(cj_at(job->uuids, i)));
 			return false;
 		}
 		obs_source_release(source);
 	}
 	for (size_t i = 0; i < cj_size(job->asset_paths); i++) {
 		if (!sfs_exists(cj_str(cj_at(job->asset_paths, i)))) {
-			snprintf(why, size, "a file it uses is gone (%s).", cj_str(cj_at(job->asset_paths, i)));
+			snprintf(why, size, obs_module_text("Show.Verify.FileGone"),
+				 cj_str(cj_at(job->asset_paths, i)));
 			return false;
 		}
 	}
 	if (!obs_frontend_get_streaming_service()) {
-		snprintf(why, size, "no stream service is set.");
+		snprintf(why, size, "%s", obs_module_text("Show.Verify.NoService"));
 		return false;
 	}
 	return true;
@@ -471,7 +469,7 @@ static void succeed(struct apply_job *job)
 	show_set_active(job->id);
 	show_set_reentry(job->id, job->needs_reentry);
 	blog(LOG_INFO, SHOW_LOG_PREFIX "switched to %s (local revision %lld)", job->id, (long long)job->seq);
-	show_set_message(false, "Switched to %s.", job->name);
+	show_set_message(false, obs_module_text("Show.Msg.Switched"), job->name);
 	show_set_warnings(job->warnings);
 	job->warnings = NULL;
 
@@ -533,7 +531,7 @@ static void swap_ui(void *param)
 	/* the guard again, on the UI thread, right before anything changes (design section 6) */
 	if (!show_guard_idle(reason, sizeof(reason))) {
 		sfs_remove_tree(job->staging);
-		snprintf(err, sizeof(err), "Didn't switch: %s", reason);
+		snprintf(err, sizeof(err), obs_module_text("Show.Msg.DidntSwitch"), reason);
 		fail_job(job, err);
 		return;
 	}
@@ -560,13 +558,13 @@ static void swap_ui(void *param)
 		if (job->had_collection && sfs_exists(job->backup_collection) && !sfs_exists(job->target_collection))
 			sfs_rename(job->backup_collection, job->target_collection);
 		sfs_remove_tree(job->staging);
-		fail_job(job, "Didn't switch: CTD OBS's files for it are in use. Nothing changed.");
+		fail_job(job, obs_module_text("Show.Msg.FilesInUse"));
 		return;
 	}
 	if (!sfs_rename(job->staged_collection, job->target_collection) ||
 	    !sfs_rename(job->staged_profile, job->target_profile)) {
 		/* OBS still has the old one loaded: nothing to reload */
-		rollback(job, "the staged files couldn't be moved into place.", false);
+		rollback(job, obs_module_text("Show.Msg.StagedNotMoved"), false);
 		return;
 	}
 
@@ -583,12 +581,12 @@ static void *stage_thread(void *param)
 	struct apply_job *job = param;
 	char err[512] = "";
 	os_set_thread_name("ctd-show-stage");
-	show_set_message(false, "Preparing the switch…");
+	show_set_message(false, "%s", obs_module_text("Show.Msg.Preparing"));
 	if (!stage(job, err, sizeof(err))) {
-		fail_job(job, err[0] ? err : "Couldn't prepare the switch.");
+		fail_job(job, err[0] ? err : obs_module_text("Show.Msg.PrepareFailed"));
 		return NULL;
 	}
-	show_set_message(false, "Switching…");
+	show_set_message(false, "%s", obs_module_text("Show.Msg.Switching"));
 	obs_queue_task(OBS_TASK_UI, swap_ui, job, false);
 	return NULL;
 }
@@ -627,16 +625,16 @@ void show_apply_start(const char *id, int64_t seq)
 		cj_free(meta);
 	}
 	if (job->seq <= 0) {
-		fail_job(job, "This show profile has nothing saved yet.");
+		fail_job(job, obs_module_text("Show.Msg.NothingSaved"));
 		return;
 	}
 	if (!job_paths(job)) {
-		fail_job(job, "Can't find CTD OBS's settings folder.");
+		fail_job(job, obs_module_text("Show.Msg.NoSettingsFolder"));
 		return;
 	}
 	if (!show_run_worker(stage_thread, job)) {
 		job_free(job);
-		show_set_message(true, "Busy: wait for the current Show Profiles action to finish.");
+		show_set_message(true, "%s", obs_module_text("Show.Msg.Busy"));
 	}
 }
 
