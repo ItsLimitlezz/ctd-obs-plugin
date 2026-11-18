@@ -9,6 +9,7 @@
 
 #include "ws-vendor.h"
 #include "issues.h"
+#include "keep-live.h"
 #include "servers.h"
 #include "sync-groups.h"
 #include "obs-watch.h"
@@ -611,6 +612,27 @@ static void apply_fix(obs_data_t *request, obs_data_t *response, void *param)
 		obs_data_set_string(response, "url", url);
 }
 
+/* KeepScenesLive {clientId, scenes: [{sceneName}|{sceneUuid}], leaseSeconds?}: keep a multiview's scenes running (B1) */
+static void keep_scenes_live(obs_data_t *request, obs_data_t *response, void *param)
+{
+	UNUSED_PARAMETER(param);
+	keep_live_request(request, response);
+}
+
+/* ReleaseScenesLive {clientId} */
+static void release_scenes_live(obs_data_t *request, obs_data_t *response, void *param)
+{
+	UNUSED_PARAMETER(param);
+	keep_live_release_request(request, response);
+}
+
+/* GetKeepScenesLive: the setting, the limits, and which client keeps which scenes live */
+static void get_keep_scenes_live(obs_data_t *request, obs_data_t *response, void *param)
+{
+	UNUSED_PARAMETER(param);
+	keep_live_status_request(request, response);
+}
+
 /* ---------------------------------------------------------------- API -- */
 
 void ws_vendor_register(void)
@@ -644,7 +666,10 @@ void ws_vendor_register(void)
 			register_request("AddFeedToScene", add_feed_to_scene) &&
 			register_request("ApplySyncCheck", apply_sync_check) &&
 			register_request("SetSyncGroup", set_sync_group) && register_request("GetIssues", get_issues) &&
-			register_request("ApplyFix", apply_fix);
+			register_request("ApplyFix", apply_fix) &&
+			register_request("KeepScenesLive", keep_scenes_live) &&
+			register_request("ReleaseScenesLive", release_scenes_live) &&
+			register_request("GetKeepScenesLive", get_keep_scenes_live);
 	blog(ok ? LOG_INFO : LOG_WARNING, "[CTD] live-source: obs-websocket vendor \"ctd\" %s",
 	     ok ? "registered" : "partly registered");
 }
