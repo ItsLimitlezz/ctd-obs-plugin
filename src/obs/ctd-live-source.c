@@ -1560,7 +1560,7 @@ static void source_renamed(void *data, calldata_t *cd)
 	WITH_ENGINE(ctx, ctd_engine_redraw_loss(ctx->engine));
 }
 
-/* "void reconnect()" on the source's proc handler: the CTD Hub dock's Reconnect (R17, H11) */
+/* "void reconnect()" on the source's proc handler: the CTD Relay · Feeds dock's Reconnect (R17, H11) */
 static void proc_reconnect(void *data, calldata_t *cd)
 {
 	UNUSED_PARAMETER(cd);

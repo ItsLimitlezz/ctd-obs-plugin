@@ -24,9 +24,9 @@ OBS_MODULE_USE_DEFAULT_LOCALE("obs-ctd-live-source", "en-US")
 extern struct obs_source_info ctd_live_source_info;
 extern struct obs_source_info ctd_live_audio_source_info;
 
-/* src/ui/multistream-dock.cpp, src/ui/hub-dock.cpp */
+/* src/ui/multistream-dock.cpp, src/ui/feeds-dock.cpp */
 void ctd_multistream_dock_register(void);
-void ctd_hub_dock_register(void);
+void ctd_feeds_dock_register(void);
 /* src/ui/settings-section.cpp: CTD OBS's Settings ▸ CTD page */
 void ctd_settings_section_register(void);
 
@@ -55,7 +55,7 @@ bool obs_module_load(void)
 	obs_watch_start();
 	ctd_multistream_dock_register();
 	ctd_servers_dialog_register();
-	ctd_hub_dock_register();
+	ctd_feeds_dock_register();
 	ctd_settings_section_register();
 	show_init(); /* Show Profiles: turns itself on once OBS has loaded, only inside CTD OBS */
 	blog(LOG_INFO, "[CTD] live-source: plugin loaded (version %s)", PLUGIN_VERSION);

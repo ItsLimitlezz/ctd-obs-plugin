@@ -5,7 +5,7 @@ The plugin can be driven and read three ways:
 | Way | For | How |
 |---|---|---|
 | **obs-websocket vendor `ctd`** | anything that already talks to OBS (CTD Live Studio, scripts, Stream Deck, an overlay) | `CallVendorRequest` with `vendorName: "ctd"`; events arrive as `VendorEvent` |
-| **Webhook** | things that don't speak OBS WebSocket (a graphics server, a bot) | set a URL on a server profile (Tools ▸ CTD Hub servers); events are POSTed as JSON |
+| **Webhook** | things that don't speak OBS WebSocket (a graphics server, a bot) | set a URL on a server profile (Feed servers…); events are POSTed as JSON |
 | **CTD Relay** | CTD Live mobile, CTD Overlay and the rest of the CTD family | pair in Docks ▸ CTD Relay; events go to Relay's `/apps/{appId}/events` |
 
 Every request answers with JSON. A request that can fail has `"ok": true|false`, and an `"error"` (or `"message"`) when it
@@ -61,7 +61,7 @@ The answer is in `d.responseData.responseData`. To receive the events, identify 
 ```
 
 **`KickPublisher`** `{serverId?, path}` — drops the camera publishing to `path` so it reconnects. Only on a profile with
-"Allow CTD Hub to change this MediaMTX".
+"Allow CTD Relay · Feeds to change this MediaMTX".
 
 ```json
 {"ok": true, "message": "Kicked the publisher of \"mob944\": the camera should reconnect."}
