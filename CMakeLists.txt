@@ -52,6 +52,7 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       src/obs/webhook.c
       src/obs/ws-vendor.c
       src/obsws-config.c
+      src/overlay-scenes.c
       src/plugin-main.c
       src/show/apply.c
       src/show/assets.c
@@ -171,6 +172,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/loss-card.c src/obs/loss-vi
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/api/poller.c src/ui/hub-dock.cpp src/obs/ws-vendor.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/issues.c src/obs/sync-groups.c src/obs/webhook.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/obs-watch.c src/obs/servers.c src/ui/servers-dialog.cpp)
+# A source per CTD Overlay scene in the CTD Relay dock; pure C, tested on its own: test/overlay-scenes
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/overlay-scenes.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/http-client.c src/multistream.c src/ui/multistream-dock.cpp)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obsws-config.c)
 # Keep scenes live for CTD apps' multiviews (bug B1). keep-live-core.c is pure C with its own tests:

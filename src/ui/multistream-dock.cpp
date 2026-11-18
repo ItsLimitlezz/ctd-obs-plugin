@@ -35,11 +35,13 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
 
 #include "../multistream.h"
+#include "../overlay-scenes.h"
 #include "icons.hpp"
 #include "show-section.hpp"
 
@@ -56,6 +58,8 @@ constexpr const char *kOverlaySlot = "ctd_overlay_slot";
 constexpr const char *kOverlayCanvas = "ctd_overlay_canvas";
 constexpr const char *kOverlayName = "ctd_overlay_name";
 constexpr const char *kOverlayApp = "ctd_overlay_app";
+/* the overlay's scene the source is pinned to (meta.scenes id, SKP 04 §4.9); empty or absent = the whole overlay */
+constexpr const char *kOverlayScene = "ctd_overlay_scene";
 
 QString str(obs_data_t *data, const char *key)
 {
@@ -80,6 +84,48 @@ QString overlaySlot(obs_data_t *overlay)
 	const QString slot = str(meta, "slot");
 	obs_data_release(meta);
 	return slot;
+}
+
+/* One of the scenes CTD Overlay says a URL may pin (meta.scenes: [{ id, name, core? }]), for a source per scene. */
+struct OverlayScene {
+	QString id;
+	QString name;
+	std::string url; /* its own browser-source URL when CTD Overlay gives one; else the overlay's with scene=<id> */
+};
+
+/* meta.scenes, the ones with an id; empty when the overlay offers no choice (one scene, or an older CTD Overlay) */
+std::vector<OverlayScene> overlayScenes(obs_data_t *overlay)
+{
+	std::vector<OverlayScene> out;
+	obs_data_t *meta = obs_data_get_obj(overlay, "meta");
+	obs_data_array_t *scenes = meta ? obs_data_get_array(meta, "scenes") : nullptr;
+	const size_t count = scenes ? obs_data_array_count(scenes) : 0;
+	for (size_t i = 0; i < count; i++) {
+		obs_data_t *scene = obs_data_array_item(scenes, i);
+		const QString id = str(scene, "id");
+		const QString name = str(scene, "name");
+		if (!id.isEmpty())
+			out.push_back({id, name.isEmpty() ? id : name, obs_data_get_string(scene, "url")});
+		obs_data_release(scene);
+	}
+	obs_data_array_release(scenes);
+	obs_data_release(meta);
+	return out;
+}
+
+/* the overlay's URL showing only `scene` (the whole overlay when it is empty): the scene's own url from meta.scenes,
+ * else the overlay's url with scene=<id> set (SKP 04 §4.9) */
+std::string overlaySceneUrl(obs_data_t *overlay, const QString &scene)
+{
+	if (!scene.isEmpty())
+		for (const OverlayScene &s : overlayScenes(overlay))
+			if (s.id == scene && !s.url.empty())
+				return s.url;
+	const QByteArray id = scene.toUtf8();
+	char *url = ctd_overlay_scene_url(obs_data_get_string(overlay, "url"), id.isEmpty() ? nullptr : id.constData());
+	std::string out = url ? url : obs_data_get_string(overlay, "url");
+	free(url);
+	return out;
 }
 
 /* stream keys are secrets: only their start is ever shown */
@@ -350,6 +396,11 @@ public:
 		overlays_->setMinimumHeight(70);
 		wrapLines(overlays_);
 		overlaysLayout->addWidget(overlays_, 1);
+		/* the selected overlay's scenes (meta.scenes): the whole overlay, or one scene as its own source */
+		overlayScene_ = new QComboBox(overlaysBox);
+		overlayScene_->setToolTip(uiText("Relay.Overlay.SceneTip"));
+		overlayScene_->setVisible(false);
+		overlaysLayout->addWidget(overlayScene_);
 		/* stacked, not side by side, so the dock stays narrow enough for a side dock area */
 		auto *overlayButtons = new QVBoxLayout();
 		overlayButtons->setSpacing(6);
@@ -413,11 +464,13 @@ public:
 		QObject::connect(addOverlay_, &QPushButton::clicked, this, [this] {
 			obs_data_t *overlay = selectedOverlay();
 			if (overlay)
-				addOverlay(overlay);
+				addOverlay(overlay, overlayScene_->count() > 0 ? overlayScene_->currentData().toString()
+									       : QString());
 			else
 				QMessageBox::information(this, uiText("Common.DialogTitle"),
 							 uiText("Relay.PickOverlayFirst"));
 		});
+		QObject::connect(overlays_, &QListWidget::currentRowChanged, this, [this] { showScenePicker(); });
 		QObject::connect(switchOverlays_, &QPushButton::clicked, this, [this] { switchOverlays(); });
 		QObject::connect(ask_, &QPushButton::clicked, this, [this] {
 			const QString name = template_->text().trimmed();
@@ -753,6 +806,8 @@ private:
 	{
 		const QString selected =
 			overlays_->currentItem() ? overlays_->currentItem()->data(Qt::UserRole).toString() : QString();
+		/* the list's own signals would rebuild the picker mid-refresh; it is rebuilt once at the end */
+		overlays_->blockSignals(true);
 		overlays_->clear();
 		overlayData_.clear();
 		const size_t count = s.overlays ? obs_data_array_count(s.overlays) : 0;
@@ -763,6 +818,9 @@ private:
 					       .arg(obs_data_get_int(o, "width"))
 					       .arg(obs_data_get_int(o, "height"))
 					       .arg(overlayCanvas(o), str(o, "appName"));
+			const size_t scenes = overlayScenes(o).size();
+			if (scenes > 1)
+				line += " · " + uiText("Relay.Overlay.ScenesCount").arg(scenes);
 			if (!obs_data_get_bool(o, "appOnline"))
 				line += " " + uiText("Relay.Overlay.Offline");
 			auto *item = new QListWidgetItem(line, overlays_);
@@ -771,6 +829,30 @@ private:
 				overlays_->setCurrentItem(item);
 			overlayData_.emplace_back(o); /* owned until the next refresh */
 		}
+		overlays_->blockSignals(false);
+		showScenePicker();
+	}
+
+	/* The picker under the list: "Whole overlay (follows the show)", then each scene of the selected overlay. Hidden
+	 * when it has no scenes to choose from. Keeps the scene picked while the list refreshes. */
+	void showScenePicker()
+	{
+		const QString picked = overlayScene_->currentData().toString();
+		overlayScene_->blockSignals(true);
+		overlayScene_->clear();
+		obs_data_t *overlay = selectedOverlay();
+		const std::vector<OverlayScene> scenes = overlay ? overlayScenes(overlay) : std::vector<OverlayScene>();
+		const bool choice = scenes.size() > 1;
+		if (choice) {
+			overlayScene_->addItem(uiText("Relay.Overlay.WholeOverlay"), QString());
+			for (const OverlayScene &scene : scenes) {
+				overlayScene_->addItem(scene.name, scene.id);
+				if (scene.id == picked)
+					overlayScene_->setCurrentIndex(overlayScene_->count() - 1);
+			}
+		}
+		overlayScene_->blockSignals(false);
+		overlayScene_->setVisible(choice);
 	}
 
 	void showChat(const ms_snapshot &s)
@@ -917,10 +999,11 @@ private:
 		return row >= 0 && row < (int)overlayData_.size() ? overlayData_[row].get() : nullptr;
 	}
 
-	static void setOverlaySettings(obs_source_t *source, obs_data_t *overlay)
+	/* scene: the one of meta.scenes the source shows; empty = the whole overlay, which follows its show */
+	static void setOverlaySettings(obs_source_t *source, obs_data_t *overlay, const QString &scene)
 	{
 		obs_data_t *settings = obs_data_create();
-		obs_data_set_string(settings, "url", obs_data_get_string(overlay, "url"));
+		obs_data_set_string(settings, "url", overlaySceneUrl(overlay, scene).c_str());
 		obs_data_set_int(settings, "width", obs_data_get_int(overlay, "width"));
 		obs_data_set_int(settings, "height", obs_data_get_int(overlay, "height"));
 		obs_source_update(source, settings);
@@ -931,12 +1014,62 @@ private:
 		obs_data_set_string(priv, kOverlayCanvas, overlayCanvas(overlay).toUtf8().constData());
 		obs_data_set_string(priv, kOverlayName, obs_data_get_string(overlay, "name"));
 		obs_data_set_string(priv, kOverlayApp, obs_data_get_string(overlay, "appId"));
+		obs_data_set_string(priv, kOverlayScene, scene.toUtf8().constData());
 		obs_data_release(priv);
 	}
 
+	/* the name of the overlay's scene `id`, or the id itself */
+	static QString sceneName(obs_data_t *overlay, const QString &id)
+	{
+		for (const OverlayScene &scene : overlayScenes(overlay))
+			if (scene.id == id)
+				return scene.name;
+		return id;
+	}
+
+	/* A browser source showing the overlay (or one of its scenes), at the overlay's size, top-left in `scene`. Named
+	 * after the overlay ("CTD · <overlay> · <scene>" for a scene), with a number added when the name is taken.
+	 * Returns the name it got, or an empty string. */
+	static std::string addOverlaySource(obs_scene_t *scene, obs_data_t *overlay, const QString &sceneId)
+	{
+		const std::string overlayName = obs_data_get_string(overlay, "name");
+		const std::string fallback = obs_module_text("Relay.Overlay.DefaultName");
+		std::string base = overlayName.empty() ? fallback : overlayName;
+		if (!sceneId.isEmpty())
+			base = uiText("Relay.Overlay.SceneSourceName")
+				       .arg(QString::fromStdString(base), sceneName(overlay, sceneId))
+				       .toStdString();
+		/* a name no other source has */
+		std::string name = base;
+		for (int n = 2;; n++) {
+			obs_source_t *existing = obs_get_source_by_name(name.c_str());
+			if (!existing)
+				break;
+			obs_source_release(existing);
+			name = base + " " + std::to_string(n);
+		}
+		obs_data_t *settings = obs_data_create();
+		obs_source_t *source = obs_source_create("browser_source", name.c_str(), settings, nullptr);
+		obs_data_release(settings);
+		if (!source)
+			return std::string();
+		setOverlaySettings(source, overlay, sceneId);
+		/* top-left at 1:1, so an overlay the canvas's size covers it exactly. Left to OBS, a browser source that
+		 * hasn't loaded yet is 0×0 and gets centred, leaving most of it off the canvas. */
+		obs_sceneitem_t *item = obs_scene_add(scene, source);
+		if (item) {
+			const vec2 origin = {0.0f, 0.0f};
+			obs_sceneitem_set_alignment(item, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
+			obs_sceneitem_set_pos(item, &origin);
+		}
+		obs_source_release(source);
+		return name;
+	}
+
 	/* H21: a browser source at the overlay's size, in the current scene of the canvas meta.canvas names (the main
-	 * canvas for landscape, the vertical canvas for vertical) */
-	void addOverlay(obs_data_t *overlay)
+	 * canvas for landscape, the vertical canvas for vertical). sceneId: one of its scenes (meta.scenes), pinned with
+	 * scene=<id>; empty = the whole overlay, which follows its show. */
+	void addOverlay(obs_data_t *overlay, const QString &sceneId = QString())
 	{
 		const bool vertical = overlayCanvas(overlay) == "vertical";
 		obs_source_t *sceneSource = nullptr;
@@ -961,32 +1094,10 @@ private:
 			obs_source_release(sceneSource);
 			return;
 		}
-		/* a name no other source has */
-		const std::string base = obs_data_get_string(overlay, "name");
-		const std::string fallback = obs_module_text("Relay.Overlay.DefaultName");
-		std::string name = base.empty() ? fallback : base;
-		for (int n = 2;; n++) {
-			obs_source_t *existing = obs_get_source_by_name(name.c_str());
-			if (!existing)
-				break;
-			obs_source_release(existing);
-			name = (base.empty() ? fallback : base) + " " + std::to_string(n);
-		}
-		obs_data_t *settings = obs_data_create();
-		obs_source_t *source = obs_source_create("browser_source", name.c_str(), settings, nullptr);
-		obs_data_release(settings);
-		if (source) {
-			setOverlaySettings(source, overlay);
-			/* top-left at 1:1, so an overlay the canvas's size covers it exactly. Left to OBS, a browser
-			 * source that hasn't loaded yet is 0×0 and gets centred, leaving most of it off the canvas. */
-			obs_sceneitem_t *item = obs_scene_add(scene, source);
-			if (item) {
-				const vec2 origin = {0.0f, 0.0f};
-				obs_sceneitem_set_alignment(item, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
-				obs_sceneitem_set_pos(item, &origin);
-			}
-			obs_source_release(source);
-			blog(LOG_INFO, "[CTD] relay: added overlay '%s' to %s", name.c_str(),
+		const std::string name = addOverlaySource(scene, overlay, sceneId);
+		if (!name.empty()) {
+			blog(LOG_INFO, "[CTD] relay: added overlay '%s'%s%s to %s", name.c_str(),
+			     sceneId.isEmpty() ? "" : ", scene ", sceneId.toUtf8().constData(),
 			     where.toUtf8().constData());
 			if (!vertical || where != uiText("Relay.Overlay.MainScene"))
 				action_->setText(
@@ -996,12 +1107,14 @@ private:
 	}
 
 	/* H21: browser sources showing one of the hub's overlays now show this profile's equivalent (meta.slot +
-	 * meta.canvas; by name when the overlay has no slot). Never deletes anything. */
+	 * meta.canvas; by name when the overlay has no slot), on the same scene of it (ctd_overlay_scene). A source
+	 * pinned to a scene the equivalent overlay doesn't have is left as it is. Never deletes anything. */
 	void switchOverlays()
 	{
 		struct Match {
 			MultiStreamDock *dock;
 			int switched = 0;
+			int kept = 0;
 		} match{this};
 		obs_enum_sources(
 			[](void *param, obs_source_t *source) {
@@ -1012,6 +1125,7 @@ private:
 				const QString slot = str(priv, kOverlaySlot);
 				const QString canvas = str(priv, kOverlayCanvas);
 				const QString name = str(priv, kOverlayName);
+				const QString scene = str(priv, kOverlayScene);
 				obs_data_release(priv);
 				if (slot.isEmpty() && name.isEmpty())
 					return true; /* not one of ours */
@@ -1020,17 +1134,31 @@ private:
 					const bool same = !slot.isEmpty() && !oSlot.isEmpty()
 								  ? oSlot == slot && overlayCanvas(o.get()) == canvas
 								  : str(o.get(), "name") == name;
-					if (same) {
-						setOverlaySettings(source, o.get());
+					if (!same)
+						continue;
+					bool hasScene = scene.isEmpty();
+					for (const OverlayScene &s : overlayScenes(o.get()))
+						hasScene = hasScene || s.id == scene;
+					if (hasScene) {
+						setOverlaySettings(source, o.get(), scene);
 						m->switched++;
-						break;
+					} else {
+						m->kept++;
 					}
+					break;
 				}
 				return true;
 			},
 			&match);
-		action_->setText(match.switched ? uiText("Relay.Overlay.Switched").arg(match.switched)
-						: uiText("Relay.Overlay.NoneToSwitch"));
+		QString text = match.switched ? uiText("Relay.Overlay.Switched").arg(match.switched)
+					      : uiText("Relay.Overlay.NoneToSwitch");
+		if (match.kept)
+			text += " " + uiText("Relay.Overlay.SceneKept").arg(match.kept);
+		if (match.kept)
+			blog(LOG_INFO,
+			     "[CTD] relay: kept %d overlay source(s): their scene isn't in this profile's overlay",
+			     match.kept);
+		action_->setText(text);
 	}
 
 	struct DataRef {
@@ -1060,6 +1188,7 @@ private:
 	QLabel *routeReason_;
 	bool connected_ = false;
 	QListWidget *overlays_;
+	QComboBox *overlayScene_;
 	QPushButton *addOverlay_;
 	QPushButton *switchOverlays_;
 	QLineEdit *template_;
