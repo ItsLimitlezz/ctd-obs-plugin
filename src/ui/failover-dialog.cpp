@@ -1,5 +1,5 @@
 /*
- * Tools ▸ CTD failover (CTD OBS F2): what to do when a feed on program dies. One switch for the whole thing, the
+ * CTD ▸ Failover… (Tools ▸ CTD failover outside CTD OBS; CTD OBS F2): what to do when a feed on program dies. One switch for the whole thing, the
  * fallback scenes in order, and per feed: what counts as dead (no signal, colour bars, a saved picture, frozen) and
  * whether it has a scene of its own to go to. The settings belong to the scene collection; Save writes them into it.
  * The rules themselves are src/obs/failover-core.c.
@@ -408,6 +408,12 @@ void procOpen(void *, calldata_t *)
 	ctd_failover_dialog_open();
 }
 
+/* void ctd_failover_available(out bool available): CTD OBS's CTD menu shows Failover… when this answers true */
+void procAvailable(void *, calldata_t *cd)
+{
+	calldata_set_bool(cd, "available", true);
+}
+
 } // namespace
 
 extern "C" void ctd_failover_dialog_open(void)
@@ -418,7 +424,15 @@ extern "C" void ctd_failover_dialog_open(void)
 
 extern "C" void ctd_failover_dialog_register(void)
 {
-	proc_handler_add(obs_get_proc_handler(), "void ctd_failover_dialog_open()", procOpen, nullptr);
-	/* Tools has it until CTD OBS's own CTD menu does (it opens the window through the proc above) */
-	obs_frontend_add_tools_menu_item(obs_module_text("Failover.MenuItem"), openFromMenu, nullptr);
+	proc_handler_t *ph = obs_get_proc_handler();
+	proc_handler_add(ph, "void ctd_failover_dialog_open()", procOpen, nullptr);
+	proc_handler_add(ph, "void ctd_failover_available(out bool available)", procAvailable, nullptr);
+
+	/* CTD OBS registers ctd_menu_failover_available before modules load when its CTD menu has this window; a CTD
+	 * OBS from before that, and stock OBS, get it under Tools */
+	calldata_t cd = {0};
+	const bool ctdMenu = proc_handler_call(ph, "ctd_menu_failover_available", &cd) && calldata_bool(&cd, "available");
+	calldata_free(&cd);
+	if (!ctdMenu)
+		obs_frontend_add_tools_menu_item(obs_module_text("Failover.MenuItem"), openFromMenu, nullptr);
 }

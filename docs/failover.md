@@ -1,7 +1,7 @@
 # Failover on dead feeds
 
-When a feed that is on program goes down, CTD OBS cuts to another scene by itself. **Tools ▸ CTD failover** sets it
-up. It is off until you turn it on, and its settings belong to the scene collection (they name its scenes and feeds).
+When a feed that is on program goes down, CTD OBS cuts to another scene by itself. **CTD ▸ Failover…** sets it up
+(**Tools ▸ CTD failover** in stock OBS, or in a CTD OBS whose CTD menu doesn't have it yet). It is off until you turn it on, and its settings belong to the scene collection (they name its scenes and feeds).
 
 ## What counts as a dead feed
 
