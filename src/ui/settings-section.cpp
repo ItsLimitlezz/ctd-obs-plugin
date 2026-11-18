@@ -1,12 +1,12 @@
 /*
  * The CTD plugin's part of CTD OBS's Settings ▸ CTD page (integration gap 7): connecting and pairing with CTD Relay,
- * which profile this CTD OBS goes to, sharing the WebSocket settings, and the CTD Hub servers. It works on the same
- * state as the CTD Relay dock (src/multistream.c), so both always agree; the dock keeps the live status and the show
- * actions.
+ * which profile this CTD OBS goes to, sharing the WebSocket settings, the CTD Hub servers, and whether CTD apps may keep
+ * their multiview scenes live (src/obs/keep-live.h). It works on the same state as the CTD Relay dock
+ * (src/multistream.c), so both always agree; the dock keeps the live status and the show actions.
  *
- * Nothing here waits for Settings' OK: Connect / Disconnect, the profile and sharing act at once, like the dock. The
- * address only takes effect through Connect (it's read-only while connected), so editing it and pressing Cancel never
- * unpairs, and Return in it means Connect, not the dialog's OK.
+ * Nothing here waits for Settings' OK: Connect / Disconnect, the profile, sharing and the multiview switch act at once,
+ * like the dock. The address only takes effect through Connect (it's read-only while connected), so editing it and
+ * pressing Cancel never unpairs, and Return in it means Connect, not the dialog's OK.
  *
  * void ctd_settings_widget(in ptr parent, out ptr widget)
  *     Makes the section as a child of parent (a QWidget *). UI thread only. CTD OBS's settings page calls it.
@@ -32,6 +32,7 @@
 #include <QVBoxLayout>
 
 #include "../multistream.h"
+#include "../obs/keep-live.h"
 #include "../obs/servers.h"
 
 namespace {
@@ -91,6 +92,17 @@ public:
 		hubLayout->addWidget(servers, 0, Qt::AlignLeft);
 		layout->addWidget(hub);
 
+		/* CTD apps: KeepScenesLive (bug B1) */
+		auto *apps = new QGroupBox(text("Settings.Apps.Title"), this);
+		auto *appsLayout = new QVBoxLayout(apps);
+		keepLive_ = new QCheckBox(text("Settings.Apps.KeepLive"), apps);
+		keepLive_->setChecked(keep_live_enabled());
+		appsLayout->addWidget(keepLive_);
+		auto *keepLiveText = new QLabel(text("Settings.Apps.KeepLiveText"), apps);
+		keepLiveText->setWordWrap(true);
+		appsLayout->addWidget(keepLiveText);
+		layout->addWidget(apps);
+
 		QObject::connect(connect_, &QPushButton::clicked, this, [this] { connectClicked(); });
 		server_->installEventFilter(this); /* Return = Connect, not Settings' OK */
 		QObject::connect(approve_, &QPushButton::clicked, this,
@@ -100,6 +112,8 @@ public:
 		});
 		QObject::connect(share_, &QCheckBox::clicked, this, [this](bool on) { shareClicked(on); });
 		QObject::connect(servers, &QPushButton::clicked, this, [] { ctd_servers_dialog_open(); });
+		/* acts at once, like the rest of this section */
+		QObject::connect(keepLive_, &QCheckBox::toggled, this, [](bool on) { keep_live_set_enabled(on); });
 
 		auto *timer = new QTimer(this);
 		QObject::connect(timer, &QTimer::timeout, this, [this] { refresh(); });
@@ -230,6 +244,7 @@ private:
 	QComboBox *profile_;
 	QCheckBox *share_;
 	QLabel *shareStatus_;
+	QCheckBox *keepLive_;
 	QString approveUrl_;
 	QStringList labels_, ids_;
 	QString current_;

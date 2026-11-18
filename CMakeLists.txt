@@ -42,6 +42,8 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       src/multistream.c
       src/obs/ctd-live-source.c
       src/obs/issues.c
+      src/obs/keep-live-core.c
+      src/obs/keep-live.c
       src/obs/loss-card.c
       src/obs/loss-video.c
       src/obs/obs-watch.c
@@ -171,6 +173,9 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/issues.c src/obs/sync-group
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/obs-watch.c src/obs/servers.c src/ui/servers-dialog.cpp)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/http-client.c src/multistream.c src/ui/multistream-dock.cpp)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obsws-config.c)
+# Keep scenes live for CTD apps' multiviews (bug B1). keep-live-core.c is pure C with its own tests:
+#   cmake --build --preset <preset> --target ctd-keep-live-tests && ctest --test-dir <build dir> -C RelWithDebInfo
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/keep-live.c src/obs/keep-live-core.c)
 # Show Profiles (design: hub epics/show-profiles-design.md). The pure-logic files are shared with ctd-show-tests.
 set(
   CTD_SHOW_PURE_SOURCES
@@ -243,3 +248,4 @@ endif()
 #   cmake --build --preset <preset> --target ctd-show-tests && ctest --test-dir <build dir> -C RelWithDebInfo
 enable_testing()
 add_subdirectory(test/show)
+add_subdirectory(test/keep-live)
