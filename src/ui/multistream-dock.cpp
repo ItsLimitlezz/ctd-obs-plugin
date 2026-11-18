@@ -38,6 +38,7 @@
 #include <vector>
 
 #include "../multistream.h"
+#include "../obs/servers.h"
 #include "icons.hpp"
 #include "show-section.hpp"
 
@@ -309,6 +310,18 @@ public:
 		clock_->setTextInteractionFlags(Qt::TextSelectableByMouse);
 		clock_->hide();
 		layout->addWidget(clock_);
+
+		/* incoming feeds: the Feeds dock (feeds, issues, sync groups) and its servers belong to CTD Relay */
+		auto *feedsRow = new QHBoxLayout();
+		auto *openFeeds = ctd::button(new QPushButton(uiText("Relay.OpenFeeds"), this));
+		openFeeds->setToolTip(uiText("Relay.OpenFeeds.Tooltip"));
+		auto *feedServers = ctd::button(new QPushButton(uiText("Relay.FeedServers"), this));
+		feedServers->setToolTip(uiText("Relay.FeedServers.Tooltip"));
+		feedsRow->addWidget(openFeeds, 1);
+		feedsRow->addWidget(feedServers, 1);
+		layout->addLayout(feedsRow);
+		connect(openFeeds, &QPushButton::clicked, this, [] { ctd_feeds_dock_show(); });
+		connect(feedServers, &QPushButton::clicked, this, [] { ctd_servers_dialog_open(); });
 
 		/* show profiles (T12): hidden on stock OBS */
 		showProfiles_ = new ShowProfilesSection(this);

@@ -1,5 +1,5 @@
 /*
- * Tools ▸ CTD Hub servers (SPEC 5.1, H1 to H4): add, edit, test and remove the MediaMTX server profiles the sources
+ * Feed servers (CTD Relay dock ▸ Feed servers…, Tools ▸ CTD Relay feed servers…; SPEC 5.1, H1 to H4): add, edit, test and remove the MediaMTX server profiles the sources
  * read from. Saving a profile reconnects every source that uses it. The secrets are typed here and stored in the
  * plugin's own config; they are never shown again in clear or logged.
  */
@@ -337,5 +337,5 @@ extern "C" void ctd_servers_dialog_open(void)
 
 extern "C" void ctd_servers_dialog_register(void)
 {
-	obs_frontend_add_tools_menu_item("CTD Hub servers…", openFromMenu, nullptr);
+	obs_frontend_add_tools_menu_item(obs_module_text("Servers.MenuItem"), openFromMenu, nullptr);
 }
