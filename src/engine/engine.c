@@ -117,6 +117,11 @@ struct ctd_engine {
 	bool have_checksum;
 	uint64_t picture_same_since_ns; /* 0 while the picture changes */
 	volatile long frozen_ms;
+	/* the same 16 × 16 sample points as luma (0 to 255), eight to a word, for picture matching (failover on colour
+	 * bars or a saved picture). Read word by word from other threads: a reader may see two frames mixed, which for
+	 * a still picture is the same picture and for a moving one is just another picture. */
+	volatile int64_t picture_grid[CTD_PICTURE_GRID_BYTES / 8];
+	volatile long picture_grid_ready;
 	double decode_avg_ms;
 	volatile long decode_us;
 	volatile long nominal_fps_x100;
@@ -571,6 +576,7 @@ static void measure_picture(struct ctd_engine *e, const AVFrame *picture)
 		return;
 	const int step = picture->format == AV_PIX_FMT_BGRA ? 4 : picture->format == AV_PIX_FMT_P010LE ? 2 : 1;
 	uint32_t hash = 2166136261u; /* FNV-1a */
+	uint8_t grid[CTD_PICTURE_GRID_BYTES];
 	for (int y = 0; y < 16; y++) {
 		const uint8_t *row =
 			picture->data[0] + (size_t)((2 * y + 1) * picture->height / 32) * picture->linesize[0];
@@ -580,8 +586,21 @@ static void measure_picture(struct ctd_engine *e, const AVFrame *picture)
 				hash ^= px[b];
 				hash *= 16777619u;
 			}
+			/* luma: BGRA weighted, P010's top eight bits (the high byte), else the 8-bit luma plane */
+			uint8_t luma = px[0];
+			if (step == 4)
+				luma = (uint8_t)((px[0] * 29 + px[1] * 150 + px[2] * 77) >> 8);
+			else if (step == 2)
+				luma = px[1];
+			grid[y * 16 + x] = luma;
 		}
 	}
+	for (size_t i = 0; i < CTD_PICTURE_GRID_BYTES / 8; i++) {
+		int64_t word;
+		memcpy(&word, grid + i * 8, sizeof(word));
+		eng_store_i64(&e->picture_grid[i], word);
+	}
+	eng_store_long(&e->picture_grid_ready, 1);
 	const uint64_t now = now_ns(e);
 	if (e->have_checksum && hash == e->picture_checksum) {
 		if (!e->picture_same_since_ns)
@@ -1507,6 +1526,7 @@ static bool run_session(struct ctd_engine *e, const char *url, const char *strea
 	e->have_checksum = false;
 	e->picture_same_since_ns = 0;
 	eng_store_long(&e->frozen_ms, 0);
+	eng_store_long(&e->picture_grid_ready, 0); /* a new session: no picture of it yet */
 	connected = true;
 
 	while (!stopping(e) && !eng_load_bool(&e->reconnect_now)) {
@@ -1898,6 +1918,17 @@ void ctd_engine_reset_audio(struct ctd_engine *e)
 void ctd_engine_redraw_loss(struct ctd_engine *e)
 {
 	eng_store_bool(&e->redraw_loss, true);
+}
+
+bool ctd_engine_get_picture_grid(struct ctd_engine *e, uint8_t out[CTD_PICTURE_GRID_BYTES])
+{
+	if (!eng_load_long(&e->picture_grid_ready))
+		return false;
+	for (size_t i = 0; i < CTD_PICTURE_GRID_BYTES / 8; i++) {
+		const int64_t word = eng_load_i64(&e->picture_grid[i]);
+		memcpy(out + i * 8, &word, sizeof(word));
+	}
+	return true;
 }
 
 void ctd_engine_get_stats(struct ctd_engine *e, struct ctd_engine_stats *out)

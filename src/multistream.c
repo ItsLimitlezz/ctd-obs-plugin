@@ -2105,7 +2105,10 @@ void ms_post_event(const char *type, obs_data_t *data)
 		obs_data_array_erase(ms.events, 0); /* the hub has been away a while: the oldest go first */
 	obs_data_array_push_back(ms.events, event);
 	obs_data_release(event);
-	const bool urgent = strcmp(type, "obs.scene") == 0 || strcmp(type, "obs.feed.state") == 0;
+	/* scene and feed changes, failovers, and an output starting or stopping (CTD Relay tells a stop on purpose
+	 * from a lost feed by it) go out at once */
+	const bool urgent = strcmp(type, "obs.scene") == 0 || strcmp(type, "obs.feed.state") == 0 ||
+			    strcmp(type, "obs.failover") == 0 || strcmp(type, "obs.output") == 0;
 	ms.events_urgent |= urgent;
 	pthread_mutex_unlock(&ms.mutex);
 	if (urgent)

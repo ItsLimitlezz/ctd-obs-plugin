@@ -229,6 +229,12 @@ void ctd_engine_redraw_loss(struct ctd_engine *engine);
 
 void ctd_engine_get_stats(struct ctd_engine *engine, struct ctd_engine_stats *out);
 
+/* Any thread: the latest video frame as a 16 × 16 grid of luma (0 to 255, rows top to bottom), sampled at the same
+ * points as the frozen-picture check. False until this session has shown a frame. For recognising a picture (colour
+ * bars, a saved "no input" slate), not for display. */
+#define CTD_PICTURE_GRID_BYTES 256
+bool ctd_engine_get_picture_grid(struct ctd_engine *engine, uint8_t out[CTD_PICTURE_GRID_BYTES]);
+
 #ifdef __cplusplus
 }
 #endif

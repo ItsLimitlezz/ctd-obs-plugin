@@ -1,0 +1,32 @@
+name: Failover Tests
+on:
+  pull_request:
+    paths:
+      - src/obs/failover-core.*
+      - test/failover/**
+      - .github/workflows/failover-tests.yaml
+  push:
+    branches: [main]
+    paths:
+      - src/obs/failover-core.*
+      - test/failover/**
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    name: ctd-failover-tests (${{ matrix.os }}) 🧪
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run the failover rules tests 🧪
+        shell: bash
+        run: |
+          cmake -S test/failover -B build-failover-tests -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-failover-tests --config Debug
+          ctest --test-dir build-failover-tests -C Debug --output-on-failure
