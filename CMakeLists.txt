@@ -79,6 +79,8 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       src/ui/device-map-dialog.cpp
       src/ui/feeds-dock.cpp
       src/ui/multistream-dock.cpp
+      src/ui/producer-core.c
+      src/ui/producer-dock.cpp
       src/ui/servers-dialog.cpp
       src/ui/settings-section.cpp
       src/ui/show-section.cpp
@@ -208,6 +210,10 @@ target_sources(
 )
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/device-map-dialog.cpp src/ui/show-section.cpp)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/settings-section.cpp)
+# The CTD Producer dock: viewers per platform and one merged chat, from the CTD Relay client's snapshot.
+# producer-core.c is pure C (no libobs, no Qt) with its own tests:
+#   cmake --build --preset <preset> --target ctd-producer-tests && ctest --test-dir <build dir> -C RelWithDebInfo
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/producer-core.c src/ui/producer-dock.cpp)
 if(WIN32)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32 bcrypt)
 endif()
@@ -256,3 +262,4 @@ endif()
 enable_testing()
 add_subdirectory(test/show)
 add_subdirectory(test/keep-live)
+add_subdirectory(test/producer)
