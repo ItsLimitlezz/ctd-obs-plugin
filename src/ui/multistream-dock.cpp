@@ -436,6 +436,15 @@ public:
 		chat_->setOpenExternalLinks(true);
 		chat_->setMinimumHeight(100);
 		chatLayout->addWidget(chat_);
+		/* the CTD Producer dock has the chat with viewers per platform, filters and a list that holds still */
+		auto *producer = ctd::button(new QPushButton(uiText("Relay.OpenProducer"), chatBox));
+		producer->setToolTip(uiText("Relay.OpenProducer.Tooltip"));
+		chatLayout->addWidget(producer, 0, Qt::AlignLeft);
+		QObject::connect(producer, &QPushButton::clicked, this, [] {
+			calldata_t cd = {};
+			proc_handler_call(obs_get_proc_handler(), "ctd_producer_show", &cd);
+			calldata_free(&cd);
+		});
 		ctd::eyebrowTitle(chatBox);
 		layout->addWidget(chatBox, 1);
 
@@ -836,7 +845,8 @@ private:
 	{
 		QString html;
 		const size_t count = s.chat ? obs_data_array_count(s.chat) : 0;
-		for (size_t i = 0; i < count; i++) {
+		/* the newest 200, as before the client kept 500 for the CTD Producer dock: this box is redrawn whole */
+		for (size_t i = count > 200 ? count - 200 : 0; i < count; i++) {
 			obs_data_t *envelope = obs_data_array_item(s.chat, i);
 			obs_data_t *data = obs_data_get_obj(envelope, "data");
 			obs_data_t *user = obs_data_get_obj(data, "user");

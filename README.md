@@ -292,6 +292,25 @@ plugin doesn't follow redirects (the token would go along): use the address a se
 The connection is saved in the plugin's own settings, not in the scene collection. CTD Relay being down never
 affects the video sources.
 
+### CTD Producer dock
+
+**Docks ▸ CTD Producer** (also **Open CTD Producer** in the CTD Relay dock, and the CTD menu in CTD OBS) is what a
+producer watches during a show. It uses the CTD Relay dock's connection and profile and is read-only:
+
+- **Viewers:** every platform added up, and one chip per destination: its platform, the canvas that feeds it
+  (landscape or vertical), its state (live, starting, recovering, waiting for feed, down, offline) and its own count.
+  A platform that doesn't report a count shows a dash and is left out of the total; it is never counted as 0. The
+  numbers follow CTD Relay live.
+- **Chat:** one list with every platform's chat in the order it arrived, each line with its platform's badge and
+  the author in their colour. Platform notices (subs, raids) are in cyan, highlighted or paid messages are marked,
+  "joined" lines are dimmed. The chips above the list show or hide a platform or the joined lines (kept between
+  sessions). Messages a moderator removes disappear here too. It keeps the last 500 lines.
+- Scroll up to read back: the list holds still and a **↓ N new messages** button takes you to the newest again.
+- If the connection was approved in CTD Relay without **Read chat** or **Read status**, the dock says so and offers
+  **Pair again to show chat**: approve the new code in CTD Relay (the current connection keeps working meanwhile).
+
+Emotes and emoji are shown as text. Sending chat is not part of it yet.
+
 ### Server profiles
 
 **Tools ▸ CTD Hub servers…** keeps the MediaMTX servers your sources read from, so each address and login is typed
@@ -487,6 +506,8 @@ opens a draft release with the packages attached.
 - `src/obs/`: the OBS source around it: settings, the properties window, the reconnecting card, and the MediaMTX
   stream list.
 - `src/ui/` and `src/multistream.c`: the CTD Relay dock and its client.
+- `src/ui/producer-dock.cpp` and `src/ui/producer-core.c`: the CTD Producer dock. Its logic (viewer totals, the
+  merged chat's ring) is plain C with no OBS or Qt in it, tested by `test/producer`.
 - `tools/ctd-live-probe/`: the engine on the command line.
 - `test/`: the test harness.
 

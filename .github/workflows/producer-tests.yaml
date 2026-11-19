@@ -1,0 +1,32 @@
+name: CTD Producer Tests
+on:
+  pull_request:
+    paths:
+      - src/ui/producer-core.*
+      - test/producer/**
+      - .github/workflows/producer-tests.yaml
+  push:
+    branches: [main]
+    paths:
+      - src/ui/producer-core.*
+      - test/producer/**
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    name: ctd-producer-tests (${{ matrix.os }}) 🧪
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run the CTD Producer logic tests 🧪
+        shell: bash
+        run: |
+          cmake -S test/producer -B build-producer-tests -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-producer-tests --config Debug
+          ctest --test-dir build-producer-tests -C Debug --output-on-failure
