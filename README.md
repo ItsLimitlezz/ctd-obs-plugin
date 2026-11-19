@@ -257,6 +257,13 @@ talks to for everything after OBS:
    streaming; the key is shown masked). In CTD OBS it also sets the built-in vertical canvas's stream (a "CTD
    Relay" output) to the profile's vertical feed, so both feeds go live together. In stock OBS the vertical feed's
    URL is copied for Aitum Vertical instead.
+   It also makes the stream one CTD Relay can pass on: CTD Relay sends streams to the platforms unchanged, and they
+   need **H.264** video and **AAC** audio. An HEVC or AV1 encoder (say, from an imported profile) is switched to
+   this computer's hardware H.264 encoder (Apple VideoToolbox on a Mac; NVENC, AMF or Quick Sync on Windows), else
+   x264, with a 2 s keyframe interval and CBR; your bitrate, resolution and frame rate stay. The dock says when it
+   switched. A **pre-flight check** in the dock, and in the log when a stream starts, warns when a stream to CTD
+   Relay is HEVC or AV1 or has no AAC audio, with **Fix it** to make the same change (not while streaming). In CTD
+   OBS the change applies at once; stock OBS needs a restart to load the new encoder.
 5. **Overlays** lists the profile's overlays from CTD Overlay. **Add to current scene** creates a browser source at
    the overlay's size. After a profile change, **Switch existing to this profile** points those sources at the new
    profile's matching overlays (same slot and canvas), so the scenes carry over. Nothing is ever deleted.
