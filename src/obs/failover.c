@@ -411,7 +411,7 @@ static const char *title_key(const struct fo_decision *d)
 	return "Failover.Event.SignalLost";
 }
 
-/* the log, obs-websocket and CTD Relay hear about every switch (Relay API 1.11: obs.failover) */
+/* the log, obs-websocket and CTD Relay hear about every switch (Relay API 1.12: obs.failover) */
 static void announce(const struct fo_decision *d)
 {
 	struct dstr title = {0};

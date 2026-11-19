@@ -153,7 +153,7 @@ static obs_data_t *issue_data(const struct condition *c)
 	obs_data_set_string(data, "title", c->title);
 	obs_data_set_string(data, "cause", c->cause);
 	obs_data_set_int(data, "firstSeen", c->first_seen_ms);
-	/* Relay API 1.11: whether viewers can see it. Only for an issue about one source (a path may feed several). */
+	/* Relay API 1.12: whether viewers can see it. Only for an issue about one source (a path may feed several). */
 	if (*c->source) {
 		char scene[FO_NAME_MAX];
 		const bool on_program = failover_source_on_program(c->source, scene, sizeof(scene));

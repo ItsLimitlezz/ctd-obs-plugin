@@ -265,8 +265,8 @@ on to its other apps:
 | `obs.feed.stats` | every 5 s while LIVE | `source`, `fps`, `width`, `height`, `latenessMs`, `resyncs`, `reconnects`, `decoder` |
 | `obs.output` | the main stream, the recording or another streaming output (Aitum Vertical's) changes | `output`, `canvas`, `state` (`live`, `reconnecting`, `stopped`), `error` |
 | `obs.scene` | a canvas's program scene changes; its scene list changes; everything again every minute | `canvas`, `scene`, `sceneUuid`, `previous` (on a change of scene only), `atMs`, `scenes` [{`name`, `uuid`}] |
-| `obs.issue.raised`, `obs.issue.cleared` | as `IssueRaised`, `IssueCleared` | the same (`onProgram` / `scene`: Relay API 1.11) |
-| `obs.failover` | as `FailoverTriggered` (Relay API 1.11; sent at once) | the same |
+| `obs.issue.raised`, `obs.issue.cleared` | as `IssueRaised`, `IssueCleared` | the same (`onProgram` / `scene`: Relay API 1.12) |
+| `obs.failover` | as `FailoverTriggered` (Relay API 1.12; sent at once) | the same |
 | `obs.sync.status` | as `SyncStatusChanged` | the same |
 
 Events wait in a small queue while CTD Relay is away and never affect playback.

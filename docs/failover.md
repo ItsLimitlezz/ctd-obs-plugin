@@ -39,7 +39,7 @@ cut through OBS: it uses the current transition, and in Studio Mode it moves pro
 ## Who hears about it
 
 Every switch is written to the OBS log, sent to obs-websocket as the vendor event `FailoverTriggered`, to the webhook,
-and to CTD Relay as `obs.failover` (Relay API 1.11), which is how CTD Live tells the operator. The issues the plugin
+and to CTD Relay as `obs.failover` (Relay API 1.12), which is how CTD Live tells the operator. The issues the plugin
 reports carry `onProgram` and `scene`, so a dead feed that viewers can see is told apart from one they can't.
 
 ## Limits in this version

@@ -5,7 +5,7 @@
  * tests); this is the OBS side.
  *
  * Settings belong to the scene collection (they name its scenes and sources) and travel in its file. Every switch
- * goes to the OBS log, obs-websocket (FailoverTriggered) and CTD Relay (obs.failover, Relay API 1.11), so CTD Live
+ * goes to the OBS log, obs-websocket (FailoverTriggered) and CTD Relay (obs.failover, Relay API 1.12), so CTD Live
  * can tell the operator. The main canvas only: the vertical canvas follows in a later change.
  */
 
