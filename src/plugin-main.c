@@ -30,6 +30,8 @@ void ctd_multistream_dock_register(void);
 void ctd_feeds_dock_register(void);
 /* src/ui/settings-section.cpp: CTD OBS's Settings ▸ CTD page */
 void ctd_settings_section_register(void);
+/* src/ui/producer-dock.cpp: the CTD Producer dock (viewers per platform and the merged chat) */
+void ctd_producer_dock_register(void);
 
 /* What OBS shows for this module (the plugin list, the log). Display text only; the module's file name and its source
  * type ids stay as they are, so saved scenes keep loading. */
@@ -56,6 +58,7 @@ bool obs_module_load(void)
 	obs_watch_start();
 	ctd_multistream_dock_register();
 	ctd_servers_dialog_register();
+	ctd_producer_dock_register(); /* after the CTD Relay dock, whose connection it shows */
 	ctd_feeds_dock_register();
 	keep_live_start(); /* B1: CTD apps' multiview scenes; reads its setting before Settings ▸ CTD shows it */
 	ctd_settings_section_register();
