@@ -1,0 +1,32 @@
+name: Relay Encoder Tests
+on:
+  pull_request:
+    paths:
+      - src/relay-encoder.*
+      - test/relay-encoder/**
+      - .github/workflows/relay-encoder-tests.yaml
+  push:
+    branches: [main]
+    paths:
+      - src/relay-encoder.*
+      - test/relay-encoder/**
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    name: ctd-relay-encoder (${{ matrix.os }}) 🧪
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run the pure-logic tests 🧪
+        shell: bash
+        run: |
+          cmake -S test/relay-encoder -B build-relay-encoder-tests -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-relay-encoder-tests --config Debug
+          ctest --test-dir build-relay-encoder-tests -C Debug --output-on-failure
