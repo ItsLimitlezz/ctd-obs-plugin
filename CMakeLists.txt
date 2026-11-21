@@ -4,7 +4,11 @@ cmake_minimum_required(VERSION 3.28...3.30)
 # dependencies. Everything below this block is the standalone plugin build.
 if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
   find_package(Qt6 REQUIRED Core Widgets)
-  find_package(FFmpeg REQUIRED COMPONENTS avcodec avformat avutil swresample swscale)
+  find_package(
+    FFmpeg
+    REQUIRED
+    COMPONENTS avcodec avformat avutil swresample swscale
+  )
   # Show Profiles file transfers (S2): the libcurl OBS itself builds against
   find_package(CURL REQUIRED)
 
