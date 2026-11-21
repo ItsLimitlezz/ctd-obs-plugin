@@ -280,7 +280,13 @@ QFrame *card(QWidget *parent)
 
 QLabel *wrapped(const QString &text, QWidget *parent, const char *role = nullptr)
 {
-	auto *label = new QLabel(text, parent);
+	auto *label = new QLabel(parent);
+	/* Plain text unless a caller says otherwise: names, show names and versions come from CTD Overlay and from
+	 * template releases on GitHub, and QLabel's default (Qt::AutoText) would render one that looks like HTML. The
+	 * rich-text labels (the kit's steps, the waiting rows, release notes) set Qt::RichText and escape what they put
+	 * in. */
+	label->setTextFormat(Qt::PlainText);
+	label->setText(text);
 	label->setWordWrap(true);
 	label->setTextInteractionFlags(Qt::TextSelectableByMouse);
 	if (role)
