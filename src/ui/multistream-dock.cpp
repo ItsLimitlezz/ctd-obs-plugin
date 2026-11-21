@@ -47,6 +47,7 @@
 #include "../overlay-scenes.h"
 #include "../relay-encoder.h"
 #include "icons.hpp"
+#include "overlay-sources.hpp"
 #include "show-section.hpp"
 
 namespace {
@@ -57,13 +58,12 @@ QString uiText(const char *key)
 	return QString::fromUtf8(obs_module_text(key));
 }
 
-/* the private settings keys that mark a browser source as one of the hub's overlays (H21) */
-constexpr const char *kOverlaySlot = "ctd_overlay_slot";
-constexpr const char *kOverlayCanvas = "ctd_overlay_canvas";
-constexpr const char *kOverlayName = "ctd_overlay_name";
-constexpr const char *kOverlayApp = "ctd_overlay_app";
-/* the overlay's scene the source is pinned to (meta.scenes id, SKP 04 §4.9); empty or absent = the whole overlay */
-constexpr const char *kOverlayScene = "ctd_overlay_scene";
+/* the private settings keys that mark a browser source as one of the hub's overlays (H21): overlay-sources.hpp */
+namespace ov = ctd::overlays;
+constexpr const char *kOverlaySlot = ov::kSlot;
+constexpr const char *kOverlayCanvas = ov::kCanvas;
+constexpr const char *kOverlayName = ov::kName;
+constexpr const char *kOverlayScene = ov::kScene;
 
 QString str(obs_data_t *data, const char *key)
 {
@@ -73,63 +73,21 @@ QString str(obs_data_t *data, const char *key)
 /* landscape or vertical: meta.canvas, else the shape */
 QString overlayCanvas(obs_data_t *overlay)
 {
-	obs_data_t *meta = obs_data_get_obj(overlay, "meta");
-	QString canvas = str(meta, "canvas");
-	obs_data_release(meta);
-	if (canvas.isEmpty())
-		canvas = obs_data_get_int(overlay, "height") > obs_data_get_int(overlay, "width") ? "vertical"
-												  : "landscape";
-	return canvas;
+	return ov::canvas(overlay);
 }
 
 QString overlaySlot(obs_data_t *overlay)
 {
-	obs_data_t *meta = obs_data_get_obj(overlay, "meta");
-	const QString slot = str(meta, "slot");
-	obs_data_release(meta);
-	return slot;
+	return ov::slot(overlay);
 }
 
 /* One of the scenes CTD Overlay says a URL may pin (meta.scenes: [{ id, name, core? }]), for a source per scene. */
-struct OverlayScene {
-	QString id;
-	QString name;
-	std::string url; /* its own browser-source URL when CTD Overlay gives one; else the overlay's with scene=<id> */
-};
+using OverlayScene = ov::Scene;
 
 /* meta.scenes, the ones with an id; empty when the overlay offers no choice (one scene, or an older CTD Overlay) */
 std::vector<OverlayScene> overlayScenes(obs_data_t *overlay)
 {
-	std::vector<OverlayScene> out;
-	obs_data_t *meta = obs_data_get_obj(overlay, "meta");
-	obs_data_array_t *scenes = meta ? obs_data_get_array(meta, "scenes") : nullptr;
-	const size_t count = scenes ? obs_data_array_count(scenes) : 0;
-	for (size_t i = 0; i < count; i++) {
-		obs_data_t *scene = obs_data_array_item(scenes, i);
-		const QString id = str(scene, "id");
-		const QString name = str(scene, "name");
-		if (!id.isEmpty())
-			out.push_back({id, name.isEmpty() ? id : name, obs_data_get_string(scene, "url")});
-		obs_data_release(scene);
-	}
-	obs_data_array_release(scenes);
-	obs_data_release(meta);
-	return out;
-}
-
-/* the overlay's URL showing only `scene` (the whole overlay when it is empty): the scene's own url from meta.scenes,
- * else the overlay's url with scene=<id> set (SKP 04 §4.9) */
-std::string overlaySceneUrl(obs_data_t *overlay, const QString &scene)
-{
-	if (!scene.isEmpty())
-		for (const OverlayScene &s : overlayScenes(overlay))
-			if (s.id == scene && !s.url.empty())
-				return s.url;
-	const QByteArray id = scene.toUtf8();
-	char *url = ctd_overlay_scene_url(obs_data_get_string(overlay, "url"), id.isEmpty() ? nullptr : id.constData());
-	std::string out = url ? url : obs_data_get_string(overlay, "url");
-	free(url);
-	return out;
+	return ov::scenes(overlay);
 }
 
 /* stream keys are secrets: only their start is ever shown */
@@ -230,45 +188,9 @@ bool obsMultitrackEnabled()
 	return profile && config_get_bool(profile, "Stream1", "EnableMultitrackVideo");
 }
 
-/* The vertical canvas Aitum Stream Suite (or anything else) made with OBS's canvas API: the first canvas other than
- * the main one whose picture is taller than wide. A strong reference, or nullptr. */
-obs_canvas_t *findVerticalCanvas()
-{
-	struct Find {
-		obs_canvas_t *main;
-		obs_canvas_t *found = nullptr;
-	} find{obs_get_main_canvas()};
-	obs_enum_canvases(
-		[](void *param, obs_canvas_t *canvas) {
-			auto *f = static_cast<Find *>(param);
-			struct obs_video_info ovi = {};
-			if (canvas != f->main && obs_canvas_get_video_info(canvas, &ovi) &&
-			    ovi.base_height > ovi.base_width) {
-				f->found = obs_canvas_get_ref(canvas);
-				return false;
-			}
-			return true;
-		},
-		&find);
-	obs_canvas_release(find.main);
-	return find.found;
-}
-
-/* The scene showing on a canvas's output: channel 0, through its transition. A strong reference, or nullptr. */
-obs_source_t *canvasCurrentScene(obs_canvas_t *canvas)
-{
-	obs_source_t *source = obs_canvas_get_channel(canvas, 0);
-	if (source && obs_source_get_type(source) == OBS_SOURCE_TYPE_TRANSITION) {
-		obs_source_t *active = obs_transition_get_active_source(source);
-		obs_source_release(source);
-		source = active;
-	}
-	if (source && !obs_scene_from_source(source)) {
-		obs_source_release(source);
-		source = nullptr;
-	}
-	return source;
-}
+/* The vertical canvas Aitum Stream Suite (or anything else) made with OBS's canvas API: overlay-sources.hpp */
+using ov::canvasCurrentScene;
+using ov::findVerticalCanvas;
 
 /* ---- A stream to CTD Relay has to be H.264 + AAC (relay-encoder.h): the pre-flight check and "Send stream" ---- */
 
@@ -1560,108 +1482,21 @@ private:
 	/* scene: the one of meta.scenes the source shows; empty = the whole overlay, which follows its show */
 	static void setOverlaySettings(obs_source_t *source, obs_data_t *overlay, const QString &scene)
 	{
-		obs_data_t *settings = obs_data_create();
-		obs_data_set_string(settings, "url", overlaySceneUrl(overlay, scene).c_str());
-		obs_data_set_int(settings, "width", obs_data_get_int(overlay, "width"));
-		obs_data_set_int(settings, "height", obs_data_get_int(overlay, "height"));
-		obs_source_update(source, settings);
-		obs_data_release(settings);
-
-		obs_data_t *priv = obs_source_get_private_settings(source);
-		obs_data_set_string(priv, kOverlaySlot, overlaySlot(overlay).toUtf8().constData());
-		obs_data_set_string(priv, kOverlayCanvas, overlayCanvas(overlay).toUtf8().constData());
-		obs_data_set_string(priv, kOverlayName, obs_data_get_string(overlay, "name"));
-		obs_data_set_string(priv, kOverlayApp, obs_data_get_string(overlay, "appId"));
-		obs_data_set_string(priv, kOverlayScene, scene.toUtf8().constData());
-		obs_data_release(priv);
-	}
-
-	/* the name of the overlay's scene `id`, or the id itself */
-	static QString sceneName(obs_data_t *overlay, const QString &id)
-	{
-		for (const OverlayScene &scene : overlayScenes(overlay))
-			if (scene.id == id)
-				return scene.name;
-		return id;
-	}
-
-	/* A browser source showing the overlay (or one of its scenes), at the overlay's size, top-left in `scene`. Named
-	 * after the overlay ("CTD · <overlay> · <scene>" for a scene), with a number added when the name is taken.
-	 * Returns the name it got, or an empty string. */
-	static std::string addOverlaySource(obs_scene_t *scene, obs_data_t *overlay, const QString &sceneId)
-	{
-		const std::string overlayName = obs_data_get_string(overlay, "name");
-		const std::string fallback = obs_module_text("Relay.Overlay.DefaultName");
-		std::string base = overlayName.empty() ? fallback : overlayName;
-		if (!sceneId.isEmpty())
-			base = uiText("Relay.Overlay.SceneSourceName")
-				       .arg(QString::fromStdString(base), sceneName(overlay, sceneId))
-				       .toStdString();
-		/* a name no other source has */
-		std::string name = base;
-		for (int n = 2;; n++) {
-			obs_source_t *existing = obs_get_source_by_name(name.c_str());
-			if (!existing)
-				break;
-			obs_source_release(existing);
-			name = base + " " + std::to_string(n);
-		}
-		obs_data_t *settings = obs_data_create();
-		obs_source_t *source = obs_source_create("browser_source", name.c_str(), settings, nullptr);
-		obs_data_release(settings);
-		if (!source)
-			return std::string();
-		setOverlaySettings(source, overlay, sceneId);
-		/* top-left at 1:1, so an overlay the canvas's size covers it exactly. Left to OBS, a browser source that
-		 * hasn't loaded yet is 0×0 and gets centred, leaving most of it off the canvas. */
-		obs_sceneitem_t *item = obs_scene_add(scene, source);
-		if (item) {
-			const vec2 origin = {0.0f, 0.0f};
-			obs_sceneitem_set_alignment(item, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
-			obs_sceneitem_set_pos(item, &origin);
-		}
-		obs_source_release(source);
-		return name;
+		ov::setSourceSettings(source, overlay, scene);
 	}
 
 	/* H21: a browser source at the overlay's size, in the current scene of the canvas meta.canvas names (the main
 	 * canvas for landscape, the vertical canvas for vertical). sceneId: one of its scenes (meta.scenes), pinned with
-	 * scene=<id>; empty = the whole overlay, which follows its show. */
+	 * scene=<id>; empty = the whole overlay, which follows its show. (overlay-sources.cpp, shared with the CTD
+	 * Overlays dock) */
 	void addOverlay(obs_data_t *overlay, const QString &sceneId = QString())
 	{
-		const bool vertical = overlayCanvas(overlay) == "vertical";
-		obs_source_t *sceneSource = nullptr;
-		QString where = uiText("Relay.Overlay.CurrentScene");
-		if (vertical) {
-			obs_canvas_t *canvas = findVerticalCanvas();
-			if (canvas) {
-				sceneSource = canvasCurrentScene(canvas);
-				where = uiText("Relay.Overlay.CanvasScene")
-						.arg(QString::fromUtf8(obs_canvas_get_name(canvas)));
-				obs_canvas_release(canvas);
-			}
-			if (!sceneSource) {
-				action_->setText(uiText("Relay.Overlay.NoVerticalCanvas"));
-				where = uiText("Relay.Overlay.MainScene");
-			}
-		}
-		if (!sceneSource)
-			sceneSource = obs_frontend_get_current_scene();
-		obs_scene_t *scene = obs_scene_from_source(sceneSource);
-		if (!scene) {
-			obs_source_release(sceneSource);
-			return;
-		}
-		const std::string name = addOverlaySource(scene, overlay, sceneId);
-		if (!name.empty()) {
-			blog(LOG_INFO, "[CTD] relay: added overlay '%s'%s%s to %s", name.c_str(),
-			     sceneId.isEmpty() ? "" : ", scene ", sceneId.toUtf8().constData(),
-			     where.toUtf8().constData());
-			if (!vertical || where != uiText("Relay.Overlay.MainScene"))
-				action_->setText(
-					uiText("Relay.Overlay.Added").arg(QString::fromStdString(name), where));
-		}
-		obs_source_release(sceneSource);
+		const ov::AddResult added = ov::addToCurrentScene(overlay, sceneId);
+		if (added.noVertical)
+			action_->setText(uiText("Relay.Overlay.NoVerticalCanvas"));
+		else if (!added.name.empty())
+			action_->setText(
+				uiText("Relay.Overlay.Added").arg(QString::fromStdString(added.name), added.where));
 	}
 
 	/* H21: browser sources showing one of the hub's overlays now show this profile's equivalent (meta.slot +

@@ -1,0 +1,34 @@
+name: Overlays Dock Tests
+on:
+  pull_request:
+    paths:
+      - src/overlays-core.*
+      - src/overlay-scenes.*
+      - test/overlays-dock/**
+      - .github/workflows/overlays-dock-tests.yaml
+  push:
+    branches: [main, ctd-obs-in-tree]
+    paths:
+      - src/overlays-core.*
+      - src/overlay-scenes.*
+      - test/overlays-dock/**
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    name: ctd-overlays-dock (${{ matrix.os }}) 🧪
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run the pure-logic tests 🧪
+        shell: bash
+        run: |
+          cmake -S test/overlays-dock -B build-overlays-dock-tests -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-overlays-dock-tests --config Debug
+          ctest --test-dir build-overlays-dock-tests -C Debug --output-on-failure

@@ -4,7 +4,11 @@ cmake_minimum_required(VERSION 3.28...3.30)
 # dependencies. Everything below this block is the standalone plugin build.
 if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
   find_package(Qt6 REQUIRED Core Widgets)
-  find_package(FFmpeg REQUIRED COMPONENTS avcodec avformat avutil swresample swscale)
+  find_package(
+    FFmpeg
+    REQUIRED
+    COMPONENTS avcodec avformat avutil swresample swscale
+  )
   # Show Profiles file transfers (S2): the libcurl OBS itself builds against
   find_package(CURL REQUIRED)
 
@@ -53,6 +57,7 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       src/obs/ws-vendor.c
       src/obsws-config.c
       src/overlay-scenes.c
+      src/overlays-core.c
       src/plugin-main.c
       src/relay-encoder.c
       src/show/apply.c
@@ -79,6 +84,8 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       src/ui/device-map-dialog.cpp
       src/ui/feeds-dock.cpp
       src/ui/multistream-dock.cpp
+      src/ui/overlay-sources.cpp
+      src/ui/overlays-dock.cpp
       src/ui/producer-core.c
       src/ui/producer-dock.cpp
       src/ui/servers-dialog.cpp
@@ -214,6 +221,9 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/settings-section.cpp)
 # producer-core.c is pure C (no libobs, no Qt) with its own tests:
 #   cmake --build --preset <preset> --target ctd-producer-tests && ctest --test-dir <build dir> -C RelWithDebInfo
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/producer-core.c src/ui/producer-dock.cpp)
+# The CTD Overlays dock: CTD Overlay's overlays, template updates and the template kit, through CTD Relay. overlay-
+# sources.cpp is shared with the CTD Relay dock; overlays-core.c is pure C with its own tests: test/overlays-dock
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/overlays-core.c src/ui/overlay-sources.cpp src/ui/overlays-dock.cpp)
 if(WIN32)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32 bcrypt)
 endif()
