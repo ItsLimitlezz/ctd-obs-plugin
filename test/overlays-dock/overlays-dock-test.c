@@ -110,20 +110,24 @@ int main(void)
 	str_is("template none", ctd_template_admin_url("http://overlay.test", NULL), NULL);
 
 	/* GitHub releases */
-	str_is("releases", ctd_github_releases_url("someone/lower-third", NULL),
+	str_is("releases", ctd_github_releases_url("someone/lower-third", NULL, NULL),
 	       "https://github.com/someone/lower-third/releases");
-	str_is("release tag", ctd_github_releases_url("someone/lower.third_2", "1.3.0"),
+	str_is("release tag", ctd_github_releases_url("someone/lower.third_2", NULL, "1.3.0"),
 	       "https://github.com/someone/lower.third_2/releases/tag/v1.3.0");
-	str_is("release v tag", ctd_github_releases_url("someone/x", "v2.0.0"),
+	str_is("release v tag", ctd_github_releases_url("someone/x", "", "v2.0.0"),
 	       "https://github.com/someone/x/releases/tag/v2.0.0");
-	str_is("not a version", ctd_github_releases_url("someone/x", "latest"),
+	str_is("tag prefix", ctd_github_releases_url("ItsLimitlezz/DPRTMNT-stream-Kit", "tn-v", "1.2.0"),
+	       "https://github.com/ItsLimitlezz/DPRTMNT-stream-Kit/releases/tag/tn-v1.2.0");
+	str_is("tag prefix encoded", ctd_github_releases_url("o/r", "a b/", "1.0.0"),
+	       "https://github.com/o/r/releases/tag/a%20b%2F1.0.0");
+	str_is("not a version", ctd_github_releases_url("someone/x", "tn-v", "latest"),
 	       "https://github.com/someone/x/releases");
-	str_is("no owner", ctd_github_releases_url("/x", NULL), NULL);
-	str_is("no name", ctd_github_releases_url("someone/", NULL), NULL);
-	str_is("three parts", ctd_github_releases_url("a/b/c", NULL), NULL);
-	str_is("dotdot", ctd_github_releases_url("a/..", NULL), NULL);
-	str_is("url", ctd_github_releases_url("https://evil.test/a", NULL), NULL);
-	str_is("NULL repo", ctd_github_releases_url(NULL, "1.0.0"), NULL);
+	str_is("no owner", ctd_github_releases_url("/x", NULL, NULL), NULL);
+	str_is("no name", ctd_github_releases_url("someone/", NULL, NULL), NULL);
+	str_is("three parts", ctd_github_releases_url("a/b/c", NULL, NULL), NULL);
+	str_is("dotdot", ctd_github_releases_url("a/..", NULL, NULL), NULL);
+	str_is("url", ctd_github_releases_url("https://evil.test/a", NULL, NULL), NULL);
+	str_is("NULL repo", ctd_github_releases_url(NULL, NULL, "1.0.0"), NULL);
 
 	/* which sources show an overlay */
 	const char *o = "http://overlay.test:4848/o/lower?key=skp_ovl_abc";

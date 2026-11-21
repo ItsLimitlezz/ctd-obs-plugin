@@ -36,9 +36,10 @@ char *ctd_overlay_admin_url(const char *ui, const char *slug, bool upgrade);
 /* A template's page in CTD Overlay's admin UI: "<ui>/#/templates/<id>". NULL as above. */
 char *ctd_template_admin_url(const char *ui, const char *template_id);
 
-/* The releases page of a GitHub repository "owner/name": "https://github.com/owner/name/releases" (with "/tag/v<ver>"
- * when version is set). NULL unless repo looks like owner/name. */
-char *ctd_github_releases_url(const char *repo, const char *version);
+/* The releases page of a GitHub repository "owner/name": "https://github.com/owner/name/releases", or the release of
+ * `version` ("/tag/<tag_prefix><version>"; tag_prefix NULL or empty = "v": one repository can hold several templates,
+ * one per tag prefix such as "tn-v"). The tag is percent-encoded. NULL unless repo looks like owner/name. */
+char *ctd_github_releases_url(const char *repo, const char *tag_prefix, const char *version);
 
 /* Does a browser source showing `source_url` show the overlay at `overlay_url`, whatever scene= it pins? Both are
  * compared without their scene= parameters and #fragment; everything else (the key included) must be the same. */

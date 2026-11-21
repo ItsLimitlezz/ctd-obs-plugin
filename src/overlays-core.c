@@ -216,7 +216,7 @@ static bool repo_char(char c, bool owner)
 	       (!owner && (c == '.' || c == '_'));
 }
 
-char *ctd_github_releases_url(const char *repo, const char *version)
+char *ctd_github_releases_url(const char *repo, const char *tag_prefix, const char *version)
 {
 	if (!repo)
 		return NULL;
@@ -231,18 +231,36 @@ char *ctd_github_releases_url(const char *repo, const char *version)
 			return NULL;
 	if (strcmp(slash + 1, ".") == 0 || strcmp(slash + 1, "..") == 0)
 		return NULL;
+	static const char base[] = "https://github.com/";
 	const struct version v = parse_version(version);
-	const bool tag = version && *version && v.valid;
-	const size_t n = strlen("https://github.com/") + strlen(repo) + strlen("/releases/tag/v") +
-			 (tag ? strlen(version) : 0) + 1;
-	char *out = malloc(n);
+	if (!version || !*version || !v.valid) {
+		const size_t n = strlen(base) + strlen(repo) + strlen("/releases") + 1;
+		char *out = malloc(n);
+		if (out)
+			snprintf(out, n, "%s%s/releases", base, repo);
+		return out;
+	}
+	/* the tag: the prefix, else "v" (unless the version already starts with one), then the version */
+	const char *bare = (*version == 'v' || *version == 'V') ? version + 1 : version;
+	const char *prefix = tag_prefix && *tag_prefix ? tag_prefix : "v";
+	const size_t head = strlen(base) + strlen(repo) + strlen("/releases/tag/");
+	char *out = malloc(head + (strlen(prefix) + strlen(bare)) * 3 + 1);
 	if (!out)
 		return NULL;
-	if (tag)
-		snprintf(out, n, "https://github.com/%s/releases/tag/%s%s", repo,
-			 (*version == 'v' || *version == 'V') ? "" : "v", version);
-	else
-		snprintf(out, n, "https://github.com/%s/releases", repo);
+	snprintf(out, head + 1, "%s%s/releases/tag/", base, repo);
+	char *p = out + head;
+	static const char hex[] = "0123456789ABCDEF";
+	for (int part = 0; part < 2; part++)
+		for (const unsigned char *c = (const unsigned char *)(part ? bare : prefix); *c; c++) {
+			if (unreserved(*c)) {
+				*p++ = (char)*c;
+			} else {
+				*p++ = '%';
+				*p++ = hex[*c >> 4];
+				*p++ = hex[*c & 15];
+			}
+		}
+	*p = '\0';
 	return out;
 }
 

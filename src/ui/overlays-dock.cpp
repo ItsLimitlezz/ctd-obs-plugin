@@ -1103,6 +1103,7 @@ private:
 		obs_data_t *source = obs_data_get_obj(t, "source");
 		const QString kind = str(source, "kind");
 		const QString repo = str(source, "repo");
+		const QString tagPrefix = str(source, "tagPrefix");
 		const bool pinned = obs_data_get_bool(source, "pinned");
 		obs_data_release(source);
 		const bool followed = !kind.isEmpty() && kind != "none";
@@ -1148,6 +1149,10 @@ private:
 		top->addWidget(badge(badgeText, badgeColor, c), 0, Qt::AlignTop);
 		l->addLayout(top);
 
+		/* a repository can hold several templates, one per release tag prefix: name both */
+		if (!repo.isEmpty())
+			l->addWidget(wrapped(tagPrefix.isEmpty() ? repo : QString("%1 · %2").arg(repo, tagPrefix), c,
+					     "muted"));
 		QString versions = uiText("Overlays.Updates.Installed").arg(installed);
 		if (followed)
 			versions += " · " + uiText("Overlays.Updates.Latest").arg(latest.isEmpty() ? "?" : latest);
@@ -1192,8 +1197,9 @@ private:
 
 		auto *links = new QHBoxLayout();
 		links->setSpacing(6);
-		const QByteArray r = repo.toUtf8(), v = latest.toUtf8();
-		const QString release = taken(ctd_github_releases_url(r.constData(), v.constData()));
+		const QByteArray r = repo.toUtf8(), prefix = tagPrefix.toUtf8(), v = latest.toUtf8();
+		const QString release =
+			taken(ctd_github_releases_url(r.constData(), prefix.constData(), v.constData()));
 		if (!release.isEmpty()) {
 			auto *b = ctd::button(new QPushButton(uiText("Overlays.Updates.ReleaseNotes"), c));
 			QObject::connect(b, &QPushButton::clicked, this,
