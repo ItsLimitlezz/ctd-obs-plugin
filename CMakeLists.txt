@@ -99,6 +99,10 @@ target_sources(
   PRIVATE ${CTD_SHOW_PURE_SOURCES} src/show/apply.c src/show/device-map.c src/show/show.c src/show/sync.c
 )
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/device-map-dialog.cpp src/ui/show-section.cpp)
+# The CTD Producer dock: viewers per platform and one merged chat, from the CTD Relay client's snapshot.
+# producer-core.c is pure C (no libobs, no Qt) with its own tests:
+#   cmake --build --preset <preset> --target ctd-producer-tests && ctest --test-dir <build dir> -C RelWithDebInfo
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/producer-core.c src/ui/producer-dock.cpp)
 if(WIN32)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32 bcrypt)
 endif()
@@ -147,3 +151,4 @@ endif()
 enable_testing()
 add_subdirectory(test/show)
 add_subdirectory(test/keep-live)
+add_subdirectory(test/producer)
