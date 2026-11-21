@@ -87,6 +87,9 @@ static struct {
 	obs_data_array_t *profiles;
 	obs_data_t *status;
 	obs_data_array_t *overlays;
+	/* GET /profiles/{id}/overlay-summary items (docs/API.md §9.5): CTD Overlay's versions and template updates */
+	obs_data_array_t *overlay_summaries;
+	enum ms_summary overlay_summary_state;
 	obs_data_t *ingest;
 	uint64_t ingest_seq;
 	bool ingest_requested;
@@ -426,6 +429,8 @@ static void clear_profile_state(void)
 {
 	release_data(&ms.status);
 	release_array(&ms.overlays);
+	release_array(&ms.overlay_summaries);
+	ms.overlay_summary_state = MS_SUMMARY_UNKNOWN;
 	release_data(&ms.ingest);
 	release_array(&ms.chat);
 	release_array(&ms.alerts);
@@ -693,6 +698,39 @@ static void fetch_overlays(const char *base, const char *token, const char *prof
 		release_array(&ms.overlays);
 		ms.overlays = items;
 		items = NULL;
+		ms.seq++;
+	}
+	pthread_mutex_unlock(&ms.mutex);
+	obs_data_array_release(items);
+	obs_data_release(reply);
+}
+
+/* CTD Overlay's versions and template updates, through CTD Relay (docs/API.md §9.5). An older CTD Relay answers 404:
+ * the dock then shows the overlays without version information. */
+static void fetch_overlay_summary(const char *base, const char *token, const char *profile)
+{
+	struct dstr path = {0};
+	dstr_printf(&path, "/profiles/%s/overlay-summary", profile);
+	obs_data_t *reply = NULL;
+	const enum http_status status = get_json(base, path.array, token, &reply);
+	dstr_free(&path);
+	obs_data_array_t *items = status == HTTP_OK && reply ? obs_data_get_array(reply, "items") : NULL;
+	pthread_mutex_lock(&ms.mutex);
+	if (same(ms.profile_id, profile)) {
+		enum ms_summary state = ms.overlay_summary_state;
+		if (status == HTTP_OK) {
+			release_array(&ms.overlay_summaries);
+			ms.overlay_summaries = items;
+			items = NULL;
+			state = MS_SUMMARY_OK;
+		} else if (status == HTTP_NOT_FOUND) {
+			release_array(&ms.overlay_summaries);
+			state = MS_SUMMARY_UNSUPPORTED;
+		} else if (status == HTTP_FORBIDDEN) {
+			release_array(&ms.overlay_summaries);
+			state = MS_SUMMARY_NEED_SCOPE;
+		}
+		ms.overlay_summary_state = state;
 		ms.seq++;
 	}
 	pthread_mutex_unlock(&ms.mutex);
@@ -1696,6 +1734,7 @@ static void *ms_thread(void *unused)
 					fetch_chat(base, token, profile);
 				if (overlays_dirty || now >= next_overlays) {
 					fetch_overlays(base, token, profile);
+					fetch_overlay_summary(base, token, profile);
 					next_overlays = now + OVERLAYS_EVERY_NS;
 				}
 				if (ingest)
@@ -1849,6 +1888,7 @@ void ms_shutdown(void)
 	release_array(&ms.profiles);
 	release_data(&ms.status);
 	release_array(&ms.overlays);
+	release_array(&ms.overlay_summaries);
 	release_data(&ms.ingest);
 	release_array(&ms.chat);
 	release_array(&ms.alerts);
@@ -1894,6 +1934,9 @@ void ms_snapshot_get(struct ms_snapshot *out)
 	obs_data_addref(out->status);
 	out->overlays = ms.overlays;
 	obs_data_array_addref(out->overlays);
+	out->overlay_summaries = ms.overlay_summaries;
+	obs_data_array_addref(out->overlay_summaries);
+	out->overlay_summary_state = ms.overlay_summary_state;
 	out->ingest = ms.ingest;
 	obs_data_addref(out->ingest);
 	out->ingest_seq = ms.ingest_seq;
@@ -1952,6 +1995,7 @@ void ms_snapshot_free(struct ms_snapshot *snapshot)
 	obs_data_array_release(snapshot->profiles);
 	obs_data_release(snapshot->status);
 	obs_data_array_release(snapshot->overlays);
+	obs_data_array_release(snapshot->overlay_summaries);
 	obs_data_release(snapshot->ingest);
 	obs_data_array_release(snapshot->chat);
 	obs_data_array_release(snapshot->alerts);

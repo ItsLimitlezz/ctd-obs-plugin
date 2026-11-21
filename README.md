@@ -318,6 +318,27 @@ producer watches during a show. It uses the CTD Relay dock's connection and prof
 
 Emotes and emoji are shown as text. Sending chat is not part of it yet.
 
+### CTD Overlays dock
+
+**Docks ▸ CTD Overlays** (and the CTD menu in CTD OBS) is everything about CTD Overlay from inside OBS. It uses the
+CTD Relay dock's connection and profile: CTD Relay is the hub, and this dock never talks to CTD Overlay directly.
+
+- **Overlays:** every overlay CTD Overlay registered for this profile, one row per canvas: its template and version,
+  landscape or vertical, its scenes, whether its server is online, whether this scene collection already shows it,
+  and an update that waits for you. Search by overlay, show, template or scene; grouped by show. Pick the whole
+  overlay (it follows its show) or one of its scenes (it stays on that scene), then **Add to scene** (the same browser
+  source the CTD Relay dock adds: at the overlay's size, top-left, on the vertical canvas for a vertical overlay),
+  **Copy URL** (it holds the overlay's key: paste it only into OBS), **Open in browser**, or **Control panel** (the
+  overlay's page in CTD Overlay). Not connected, or no CTD Overlay for this profile: the dock says how to connect.
+- **Updates:** CTD Overlay's version; each template's installed version against the newest release of the GitHub
+  repository it follows, and whether the update reaches overlays by itself (patch, minor) or waits for you (major);
+  the first lines of the release notes; and the overlays that wait, each with **Open upgrade screen** (the overlay's
+  Version page in CTD Overlay). OBS never upgrades anything. Needs a CTD Relay and a CTD Overlay that share the
+  overlay summary (CTD Relay docs/API.md §9.5); with older ones the page says what to update.
+- **Make a template:** the template kit in six short steps, **Copy AI prompt** (CTD Overlay's PROMPT.md),
+  **Open template guide** and **Download starter** (the starter template, the prompt and the guide, read from CTD
+  Overlay's repository on GitHub into a folder you pick).
+
 ### Server profiles
 
 **Feed servers…** (in the CTD Relay dock and the Feeds dock; **Tools ▸ CTD Relay feed servers…** in stock OBS)
@@ -520,6 +541,9 @@ opens a draft release with the packages attached.
 - `src/ui/` and `src/multistream.c`: the CTD Relay dock and its client.
 - `src/ui/producer-dock.cpp` and `src/ui/producer-core.c`: the CTD Producer dock. Its logic (viewer totals, the
   merged chat's ring) is plain C with no OBS or Qt in it, tested by `test/producer`.
+- `src/ui/overlays-dock.cpp`, `src/ui/overlay-sources.cpp` and `src/overlays-core.c`: the CTD Overlays dock.
+  `overlay-sources.cpp` adds an overlay as a browser source for it and the CTD Relay dock alike; `overlays-core.c`
+  (versions, update kinds, links, matching sources) is plain C, tested by `test/overlays-dock`.
 - `tools/ctd-live-probe/`: the engine on the command line.
 - `test/`: the test harness.
 
