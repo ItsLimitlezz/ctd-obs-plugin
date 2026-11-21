@@ -34,6 +34,7 @@ void ctd_settings_section_register(void);
 void ctd_producer_dock_register(void);
 /* src/ui/overlays-dock.cpp: the CTD Overlays dock (CTD Overlay's overlays, updates and the template kit) */
 void ctd_overlays_dock_register(void);
+void ctd_overlays_dock_shutdown(void);
 
 /* What OBS shows for this module (the plugin list, the log). Display text only; the module's file name and its source
  * type ids stay as they are, so saved scenes keep loading. */
@@ -90,5 +91,6 @@ void obs_module_unload(void)
 	ms_shutdown();
 	mtx_pollers_shutdown(); /* the sources are gone by now; anything else still holding one */
 	servers_shutdown();
+	ctd_overlays_dock_shutdown(); /* its template-kit downloads use libcurl */
 	curl_global_cleanup();
 }

@@ -55,6 +55,9 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -62,6 +65,7 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -103,6 +107,26 @@ const char *const kKitFiles[] = {
 	"starter/template.js",
 	"starter/previews/preview.svg",
 };
+
+/* Template-kit downloads run on worker threads; the module's unload stops and waits for them before libcurl goes
+ * (ctd_overlays_dock_shutdown). */
+struct KitWorkers {
+	std::mutex mutex;
+	std::condition_variable idle;
+	int running = 0;
+	std::atomic<bool> stopping{false};
+};
+KitWorkers &kitWorkers()
+{
+	static KitWorkers workers;
+	return workers;
+}
+
+/* http_get_file's interrupt: non-zero aborts the transfer */
+int kitInterrupt(void *)
+{
+	return kitWorkers().stopping.load() ? 1 : 0;
+}
 
 QString uiText(const char *key)
 {
@@ -1227,15 +1251,24 @@ private:
 	{
 		auto alive = alive_;
 		QPointer<OverlaysDock> self(this);
-		std::thread([names, dir, done, alive, self] {
+		KitWorkers &workers = kitWorkers();
+		if (workers.stopping.load())
+			return;
+		{
+			std::lock_guard<std::mutex> lock(workers.mutex);
+			workers.running++;
+		}
+		std::thread([names, dir, done, alive, self, &workers] {
 			QStringList failed;
 			for (const std::string &name : names) {
+				if (workers.stopping.load())
+					break;
 				const std::string url = std::string(kKitRaw) + name;
 				const QString path = QDir(dir).filePath(QString::fromStdString(name));
 				QDir().mkpath(QFileInfo(path).absolutePath());
 				const QByteArray p = QDir::toNativeSeparators(path).toUtf8();
 				const enum http_status status = http_get_file(url.c_str(), nullptr, p.constData(),
-									      nullptr, nullptr, nullptr, nullptr);
+									      nullptr, kitInterrupt, nullptr, nullptr);
 				if (status != HTTP_OK) {
 					blog(LOG_WARNING,
 					     "[CTD] overlays: couldn't download %s from the template kit (%s)",
@@ -1243,13 +1276,17 @@ private:
 					failed << QString::fromStdString(name);
 				}
 			}
-			QMetaObject::invokeMethod(
-				qApp,
-				[failed, done, alive, self] {
-					if (*alive && self)
-						done(failed);
-				},
-				Qt::QueuedConnection);
+			if (!workers.stopping.load())
+				QMetaObject::invokeMethod(
+					qApp,
+					[failed, done, alive, self] {
+						if (*alive && self)
+							done(failed);
+					},
+					Qt::QueuedConnection);
+			std::lock_guard<std::mutex> lock(workers.mutex);
+			workers.running--;
+			workers.idle.notify_all();
 		}).detach();
 	}
 
@@ -1367,6 +1404,17 @@ void procShow(void *, calldata_t *)
 }
 
 } // namespace
+
+/* Module unload, before curl_global_cleanup(): aborts template-kit downloads under way and waits for their threads
+ * (a transfer polls the interrupt at least once a second). */
+extern "C" void ctd_overlays_dock_shutdown(void)
+{
+	KitWorkers &workers = kitWorkers();
+	workers.stopping = true;
+	std::unique_lock<std::mutex> lock(workers.mutex);
+	if (!workers.idle.wait_for(lock, std::chrono::seconds(10), [&workers] { return workers.running == 0; }))
+		blog(LOG_WARNING, "[CTD] overlays: a template kit download didn't stop in time");
+}
 
 extern "C" void ctd_overlays_dock_register(void)
 {
