@@ -67,6 +67,9 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/issues.c src/obs/sync-group
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/obs-watch.c src/obs/servers.c src/ui/servers-dialog.cpp)
 # A source per CTD Overlay scene in the CTD Relay dock; pure C, tested on its own: test/overlay-scenes
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/overlay-scenes.c)
+# What a stream to CTD Relay has to be (H.264 + AAC) and which encoder "Send stream" switches to; pure C, tested on
+# its own: test/relay-encoder
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/relay-encoder.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/http-client.c src/multistream.c src/ui/multistream-dock.cpp)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obsws-config.c src/obs/discovery.c src/ui/discovery-menu.cpp)
 # Keep scenes live for CTD apps' multiviews (bug B1). keep-live-core.c is pure C with its own tests:
