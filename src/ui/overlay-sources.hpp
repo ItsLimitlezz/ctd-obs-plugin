@@ -57,8 +57,13 @@ obs_canvas_t *findVerticalCanvas();
 /* The scene showing on a canvas's output: channel 0, through its transition. A strong reference, or nullptr. */
 obs_source_t *canvasCurrentScene(obs_canvas_t *canvas);
 
-/* Points a browser source at the overlay (or one of its scenes) at its size and marks it as ours. */
+/* Points a browser source at the overlay (or one of its scenes) at its size and marks it as ours. It is shut down
+ * when not visible (obs-browser's "shutdown"), so only overlays that show keep a browser running. */
 void setSourceSettings(obs_source_t *source, obs_data_t *overlay, const QString &scene);
+
+/* Turns on "shut down when not visible" for every overlay browser source of ours that lacks it (collections made
+ * before it was set). UI thread. Returns how many were changed. */
+int shutdownHiddenOverlays();
 
 /* A browser source showing the overlay (or one of its scenes), at the overlay's size, top-left in `scene`. Named
  * after the overlay ("<overlay> · <scene>" for a scene), with a number added when the name is taken. Returns the name

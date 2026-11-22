@@ -575,7 +575,14 @@ private:
 	{
 		auto *dock = static_cast<OverlaysDock *>(data);
 		switch (event) {
+		case OBS_FRONTEND_EVENT_FINISHED_LOADING:
+			ov::shutdownHiddenOverlays();
+			break;
 		case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED:
+			ov::shutdownHiddenOverlays();
+			if (dock->isVisible() && dock->scanCollection())
+				dock->rebuildTree();
+			break;
 		case OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED:
 		case OBS_FRONTEND_EVENT_SCENE_CHANGED:
 			if (dock->isVisible() && dock->scanCollection())

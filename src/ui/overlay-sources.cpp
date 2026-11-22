@@ -6,6 +6,8 @@
 #include <obs-module.h>
 
 #include <cstdlib>
+#include <cstring>
+#include <vector>
 
 #include "../overlay-scenes.h"
 
@@ -127,6 +129,9 @@ void setSourceSettings(obs_source_t *source, obs_data_t *overlay, const QString 
 	obs_data_set_string(settings, "url", sceneUrl(overlay, scene).c_str());
 	obs_data_set_int(settings, "width", obs_data_get_int(overlay, "width"));
 	obs_data_set_int(settings, "height", obs_data_get_int(overlay, "height"));
+	/* obs-browser's "Shut down source when not visible": an overlay's browser (a CEF renderer) runs only while its
+	 * scene shows; otherwise every overlay of every scene keeps a browser running and using memory */
+	obs_data_set_bool(settings, "shutdown", true);
 	obs_source_update(source, settings);
 	obs_data_release(settings);
 
@@ -138,6 +143,44 @@ void setSourceSettings(obs_source_t *source, obs_data_t *overlay, const QString 
 	obs_data_set_string(priv, kScene, scene.toUtf8().constData());
 	obs_data_set_string(priv, kResource, obs_data_get_string(overlay, "id"));
 	obs_data_release(priv);
+}
+
+int shutdownHiddenOverlays()
+{
+	/* refs taken in the enum, updated after it (obs_enum_sources holds libobs's sources lock) */
+	std::vector<obs_source_t *> found;
+	obs_enum_sources(
+		[](void *param, obs_source_t *source) {
+			const char *id = obs_source_get_unversioned_id(source);
+			if (!id || strcmp(id, "browser_source") != 0)
+				return true;
+			obs_data_t *priv = obs_source_get_private_settings(source);
+			const bool ours = *obs_data_get_string(priv, kResource) || *obs_data_get_string(priv, kSlot);
+			obs_data_release(priv);
+			if (!ours)
+				return true;
+			obs_data_t *settings = obs_source_get_settings(source);
+			const bool off = !obs_data_get_bool(settings, "shutdown");
+			obs_data_release(settings);
+			if (off) {
+				obs_source_t *ref = obs_source_get_ref(source);
+				if (ref)
+					static_cast<std::vector<obs_source_t *> *>(param)->push_back(ref);
+			}
+			return true;
+		},
+		&found);
+	for (obs_source_t *source : found) {
+		obs_data_t *settings = obs_data_create();
+		obs_data_set_bool(settings, "shutdown", true);
+		obs_source_update(source, settings);
+		obs_data_release(settings);
+		obs_source_release(source);
+	}
+	if (!found.empty())
+		blog(LOG_INFO, "[CTD] overlays: %zu overlay browser source(s) now shut down when not visible",
+		     found.size());
+	return (int)found.size();
 }
 
 std::string addSource(obs_scene_t *scene, obs_data_t *overlay, const QString &sceneId)
