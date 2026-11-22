@@ -63,7 +63,8 @@ void ctd_servers_dialog_open(void);
 /* The same window, opened after the current event (never inside it: a properties button's handler runs inside the
  * properties view, which may rebuild itself while a modal window is open); then source's properties are refreshed
  * (NULL: none). UI thread. */
-void ctd_servers_dialog_open_later(obs_source_t *source);
+struct obs_source;
+void ctd_servers_dialog_open_later(struct obs_source *source);
 
 /* src/ui/feeds-dock.cpp: the "CTD Relay · Feeds" dock (incoming feeds, issues, sync groups). UI thread only. */
 void ctd_feeds_dock_register(void);
