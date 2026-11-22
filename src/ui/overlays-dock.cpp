@@ -686,48 +686,56 @@ private:
 	 * dock or this one) or shows one of the overlays' URLs. True when it changed. */
 	bool scanCollection()
 	{
-		struct Scan {
-			const std::vector<Row> *rows;
-			std::map<QString, InCollection> found;
-		} scan{&rows_, {}};
+		/* Only copied out while obs_enum_sources holds OBS's sources lock (the graphics thread takes it every
+		 * frame); the matching, every browser source against every overlay, comes after it is released. */
+		struct Browser {
+			std::string url;
+			QString resource;
+			QString scene;
+		};
+		std::vector<Browser> browsers;
 		obs_enum_sources(
 			[](void *param, obs_source_t *source) {
-				auto *sc = static_cast<Scan *>(param);
+				auto *list = static_cast<std::vector<Browser> *>(param);
 				if (strcmp(obs_source_get_unversioned_id(source), "browser_source") != 0)
 					return true;
+				Browser b;
 				obs_data_t *settings = obs_source_get_settings(source);
-				const std::string url = obs_data_get_string(settings, "url");
+				b.url = obs_data_get_string(settings, "url");
 				obs_data_release(settings);
 				obs_data_t *priv = obs_source_get_private_settings(source);
-				const QString resource = str(priv, ov::kResource);
-				QString scene = str(priv, ov::kScene);
+				b.resource = str(priv, ov::kResource);
+				b.scene = str(priv, ov::kScene);
 				obs_data_release(priv);
-				if (scene.isEmpty())
-					scene = taken(ctd_overlay_scene_of_url(url.c_str()));
-				for (const Row &row : *sc->rows) {
-					const bool same =
-						(!resource.isEmpty() && resource == row.key) ||
-						ctd_overlay_url_same(url.c_str(),
-								     obs_data_get_string(row.resource.get(), "url"));
-					if (!same)
-						continue;
-					InCollection &in = sc->found[row.key];
-					if (scene.isEmpty())
-						in.whole++;
-					else
-						in.scenes.insert(scene);
-					break;
-				}
+				list->push_back(std::move(b));
 				return true;
 			},
-			&scan);
-		bool changed = scan.found.size() != collection_.size();
-		for (auto it = scan.found.begin(); !changed && it != scan.found.end(); ++it) {
+			&browsers);
+		std::map<QString, InCollection> found;
+		for (const Browser &b : browsers) {
+			const QString scene = b.scene.isEmpty() ? taken(ctd_overlay_scene_of_url(b.url.c_str()))
+								: b.scene;
+			for (const Row &row : rows_) {
+				const bool same = (!b.resource.isEmpty() && b.resource == row.key) ||
+						  ctd_overlay_url_same(b.url.c_str(),
+								       obs_data_get_string(row.resource.get(), "url"));
+				if (!same)
+					continue;
+				InCollection &in = found[row.key];
+				if (scene.isEmpty())
+					in.whole++;
+				else
+					in.scenes.insert(scene);
+				break;
+			}
+		}
+		bool changed = found.size() != collection_.size();
+		for (auto it = found.begin(); !changed && it != found.end(); ++it) {
 			auto was = collection_.find(it->first);
 			changed = was == collection_.end() || was->second.whole != it->second.whole ||
 				  was->second.scenes != it->second.scenes;
 		}
-		collection_ = std::move(scan.found);
+		collection_ = std::move(found);
 		return changed;
 	}
 

@@ -574,6 +574,40 @@ static void test_chat_text(void)
 	longid[sizeof(longid) - 1] = '\0';
 	CHECK(!producer_chat_add(chat, longid, &in));
 
+	/* U+FDD0 / U+FDD1 start a new text block in Qt (one block per shown line): spaces, like line breaks */
+	memset(&in, 0, sizeof(in));
+	in.text = "a\xef\xb7\x90"
+		  "b\xef\xb7\x91"
+		  "c";
+	CHECK(producer_chat_add(chat, "01E", &in));
+	CHECK_STR(producer_chat_at(chat, 4)->text, "a b c");
+
+	producer_chat_destroy(chat);
+}
+
+/* ids the ring can never hold (a repeat, an empty one) are passed over: the lines after them stay as they are, so a
+ * sync never drops and re-adds them (each re-add rebuilt the whole chat view, up to ten times a second) */
+static void test_chat_unholdable_ids(void)
+{
+	struct producer_chat *chat = producer_chat_create();
+	fake_reset();
+	fake_push("0DA", "twitch", "a", "one");
+	fake_push("0DB", "twitch", "b", "two");
+	fake_push("0DA", "twitch", "a", "one"); /* a repeat */
+	fake_push("", "twitch", "x", "no id");  /* one the ring can't hold */
+	sync(chat);
+	const uint64_t seq_b = producer_chat_at(chat, 1)->seq;
+	struct producer_sync r = sync(chat); /* nothing changed */
+	CHECK(r.appended == 0 && r.removed_inner == 0 && r.removed_front == 0);
+	for (int n = 0; n < 3; n++) {
+		char id[8];
+		snprintf(id, sizeof(id), "0DC%d", n);
+		fake_push(id, "twitch", "c", "more");
+		r = sync(chat);
+		CHECK(r.appended == 1 && r.removed_inner == 0 && r.removed_front == 0);
+	}
+	CHECK(producer_chat_at(chat, 1)->seq == seq_b);
+	CHECK_STR(ids_of(chat), "0DA 0DB 0DC0 0DC1 0DC2");
 	producer_chat_destroy(chat);
 }
 
@@ -641,6 +675,7 @@ int main(void)
 	test_chat_replaced();
 	test_chat_ring();
 	test_chat_text();
+	test_chat_unholdable_ids();
 	test_chat_filters();
 	if (failures) {
 		printf("%d check(s) failed\n", failures);

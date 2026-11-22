@@ -536,3 +536,14 @@ bool show_flow_resolve(const struct show_relay_ops *ops, const char *id, const c
 		return show_flow_save_up(ops, id, relay[0] ? relay : NULL, plan.parent, scratch, NULL, out);
 	return true;
 }
+
+enum show_save_up_queue show_save_up_queue_action(bool ok, bool conflict, enum show_relay_result result, bool queued)
+{
+	if (ok || conflict || result == SHOW_RELAY_DENIED)
+		return SHOW_SAVE_UP_QUEUE_REMOVE;
+	if (result == SHOW_RELAY_ABORTED)
+		return SHOW_SAVE_UP_QUEUE_KEEP;
+	if (result == SHOW_RELAY_OFFLINE || queued)
+		return SHOW_SAVE_UP_QUEUE_RETRY;
+	return SHOW_SAVE_UP_QUEUE_KEEP;
+}

@@ -459,6 +459,29 @@ static void test_core(void)
 	CHECK(show_sync_retry_delay_s(1) == 15);
 	CHECK(show_sync_retry_delay_s(2) == 30);
 	CHECK(show_sync_retry_delay_s(20) == 600);
+
+	/* the offline queue after a save-up: every failed attempt of a queued one is retried later, never left due */
+	CHECK(show_save_up_queue_action(true, false, SHOW_RELAY_OK, true) == SHOW_SAVE_UP_QUEUE_REMOVE);
+	CHECK(show_save_up_queue_action(false, true, SHOW_RELAY_REFUSED, true) == SHOW_SAVE_UP_QUEUE_REMOVE);
+	CHECK(show_save_up_queue_action(false, false, SHOW_RELAY_DENIED, true) == SHOW_SAVE_UP_QUEUE_REMOVE);
+	CHECK(show_save_up_queue_action(false, false, SHOW_RELAY_OFFLINE, false) == SHOW_SAVE_UP_QUEUE_RETRY);
+	CHECK(show_save_up_queue_action(false, false, SHOW_RELAY_OFFLINE, true) == SHOW_SAVE_UP_QUEUE_RETRY);
+	const enum show_relay_result others[] = {SHOW_RELAY_LOCAL, SHOW_RELAY_BAD, SHOW_RELAY_REFUSED,
+						 SHOW_RELAY_NOT_FOUND};
+	for (size_t i = 0; i < sizeof(others) / sizeof(others[0]); i++) {
+		CHECK(show_save_up_queue_action(false, false, others[i], true) == SHOW_SAVE_UP_QUEUE_RETRY);
+		CHECK(show_save_up_queue_action(false, false, others[i], false) == SHOW_SAVE_UP_QUEUE_KEEP);
+	}
+	CHECK(show_save_up_queue_action(false, false, SHOW_RELAY_ABORTED, true) == SHOW_SAVE_UP_QUEUE_KEEP);
+	/* and a retried entry really moves back: its next try is in the future */
+	CHECK(show_sync_queue_add(ID, 1000, "bad request"));
+	cj *due = show_sync_queue_due(1000);
+	CHECK(cj_size(due) == 0);
+	cj_free(due);
+	due = show_sync_queue_due(1000 + show_sync_retry_delay_s(1));
+	CHECK(cj_size(due) == 1);
+	cj_free(due);
+	CHECK(show_sync_queue_remove(ID));
 }
 
 static bool name_exists(void *opaque, const char *name)

@@ -809,7 +809,11 @@ private:
 		std::vector<const char *> ids(count);
 		for (size_t i = 0; i < count; i++) {
 			envelopes[i] = obs_data_array_item(s.chat, i);
-			ids[i] = obs_data_get_string(envelopes[i], "id");
+			/* an envelope without its data can never become a line: no id, so the ring passes over it instead
+			 * of dropping and re-adding every line after it on each sync */
+			obs_data_t *data = obs_data_get_obj(envelopes[i], "data");
+			ids[i] = data ? obs_data_get_string(envelopes[i], "id") : "";
+			obs_data_release(data);
 		}
 		LoadContext ctx;
 		ctx.envelopes = &envelopes;

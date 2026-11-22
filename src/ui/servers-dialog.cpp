@@ -335,6 +335,23 @@ extern "C" void ctd_servers_dialog_open(void)
 	dialog.exec();
 }
 
+extern "C" void ctd_servers_dialog_open_later(obs_source_t *source)
+{
+	obs_weak_source_t *weak = source ? obs_source_get_weak_source(source) : nullptr;
+	QMetaObject::invokeMethod(
+		qApp,
+		[weak]() {
+			ctd_servers_dialog_open();
+			obs_source_t *refresh = weak ? obs_weak_source_get_source(weak) : nullptr;
+			if (refresh) {
+				obs_source_update_properties(refresh); /* the Server list, with any new profile */
+				obs_source_release(refresh);
+			}
+			obs_weak_source_release(weak);
+		},
+		Qt::QueuedConnection);
+}
+
 /* void ctd_servers_dialog_open(): CTD OBS's CTD menu opens the window through this. UI thread only. */
 static void procOpen(void *, calldata_t *)
 {

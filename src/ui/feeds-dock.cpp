@@ -738,6 +738,12 @@ private:
 				table_->selectRow(row);
 		}
 
+		/* the bitrate history of paths the server no longer lists goes (names can change with every reconnect) */
+		if (snap.status == MTX_API_OK) {
+			for (auto it = history_.begin(); it != history_.end();)
+				it = listed.count(it->first) ? std::next(it) : history_.erase(it);
+		}
+
 		/* H14: paths CTD sources read that the server no longer lists */
 		if (snap.status == MTX_API_OK) {
 			for (const auto &[path, in] : inObs) {

@@ -228,6 +228,11 @@ static char *clean_copy(const char *text, size_t max)
 			/* U+2028 / U+2029 */
 			out[n++] = ' ';
 			i += 2;
+		} else if (c == 0xef && i + 2 < keep && (unsigned char)text[i + 1] == 0xb7 &&
+			   (unsigned char)text[i + 2] >= 0x90 && (unsigned char)text[i + 2] <= 0xaf) {
+			/* U+FDD0..U+FDEF: QTextCursor::insertText starts a new block at U+FDD0 and U+FDD1 */
+			out[n++] = ' ';
+			i += 2;
 		} else {
 			out[n++] = (char)c;
 		}
@@ -340,6 +345,17 @@ bool producer_chat_add(struct producer_chat *chat, const char *id, const struct 
 	return true;
 }
 
+/* whether `id` could ever be a line of its own: not empty, short enough, and not one of the first `kept` lines */
+static bool holdable(struct producer_chat *chat, size_t kept, const char *id)
+{
+	if (!id || !*id || strlen(id) >= PRODUCER_ID_MAX)
+		return false;
+	for (size_t i = 0; i < kept; i++)
+		if (strcmp(line_at(chat, i)->id, id) == 0)
+			return false;
+	return true;
+}
+
 void producer_chat_sync(struct producer_chat *chat, const char *const *ids, size_t count, producer_load_cb load,
 			void *ctx, struct producer_sync *out)
 {
@@ -359,6 +375,10 @@ void producer_chat_sync(struct producer_chat *chat, const char *const *ids, size
 	size_t kept = 0;
 	for (size_t i = 0; i < held; i++) {
 		struct producer_line *line = line_at(chat, i);
+		/* ids the ring can never hold (none, too long, or a repeat of one kept) are passed over, not matched */
+		while (next < count && !(ids[next] && strcmp(line->id, ids[next]) == 0) &&
+		       !holdable(chat, kept, ids[next]))
+			next++;
 		if (next < count && ids[next] && strcmp(line->id, ids[next]) == 0) {
 			if (kept != i) {
 				*line_at(chat, kept) = *line;
