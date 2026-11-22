@@ -1535,6 +1535,8 @@ static void dispatch_event(const char *id, const char *event, const char *data, 
 	obs_data_release(envelope);
 }
 
+#define SSE_DATA_MAX (1024 * 1024) /* one event's data, at most (a line is cut at 256 KB) */
+
 struct sse_parser {
 	struct dstr line;
 	struct dstr data;
@@ -1567,6 +1569,9 @@ static void sse_line(struct sse_parser *p, const char *profile)
 		value = "";
 	}
 	if (strcmp(field, "data") == 0) {
+		/* one event's data is capped like a line (a server that never sends the blank line can't grow it) */
+		if (p->data.len >= SSE_DATA_MAX)
+			return;
 		if (p->data.len)
 			dstr_cat_ch(&p->data, '\n');
 		dstr_cat(&p->data, value);

@@ -30,6 +30,7 @@
 #include <QMessageBox>
 #include <QPointer>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QStringList>
 #include <QTextBrowser>
 #include <QTimer>
@@ -649,6 +650,7 @@ public:
 		layout->addLayout(connection);
 		status_ = new QLabel(this);
 		status_->setWordWrap(true);
+		status_->setTextFormat(Qt::PlainText); /* server text (the pairing message): never rich text */
 		layout->addWidget(status_);
 		action_ = new QLabel(this); /* the outcome of the last thing the user did, kept until the next one */
 		action_->setWordWrap(true);
@@ -687,6 +689,7 @@ public:
 		layout->addLayout(ctd::wrappingCheckBox(shareObsws_, uiText("Relay.ShareObsws"), this));
 		shareStatus_ = new QLabel(this);
 		shareStatus_->setWordWrap(true);
+		shareStatus_->setTextFormat(Qt::PlainText); /* carries the server's reply */
 		layout->addWidget(shareStatus_);
 		session_ = new QLabel(this);
 		session_->setWordWrap(true);
@@ -777,6 +780,7 @@ public:
 		overlaysLayout->addLayout(askRow);
 		askStatus_ = new QLabel(overlaysBox);
 		askStatus_->setWordWrap(true);
+		askStatus_->setTextFormat(Qt::PlainText); /* carries CTD Overlay's error text */
 		askStatus_->setProperty("ctdRole", "muted");
 		overlaysLayout->addWidget(askStatus_);
 		ctd::eyebrowTitle(overlaysBox);
@@ -852,6 +856,8 @@ public:
 		auto *clockTimer = new QTimer(this);
 		QObject::connect(clockTimer, &QTimer::timeout, this, [this] { showClock(); });
 		clockTimer->start(40); /* a little faster than the frames, so the frame count doesn't stutter */
+		/* the readout changes every tick: kept at a fixed size (its own, set in showClock) so a new text doesn't ask
+		 * the whole main window to lay out again 25 times a second */
 		refresh();
 	}
 
@@ -937,6 +943,9 @@ private:
 		clock_->setText(uiText("Relay.Clock").arg(run, utc, local));
 		clock_->setToolTip(uiText("Relay.Clock.Tooltip").arg(c.fps, 0, 'g', 4).arg(c.delay_ms / 2, 0, 'f', 0));
 		clock_->show();
+		const QSize hint = clock_->sizeHint();
+		if (clock_->minimumSize() != hint || clock_->maximumSize() != hint)
+			clock_->setFixedSize(hint); /* a fixed-size label's setText stops at the label */
 	}
 
 	void refresh()
@@ -1123,6 +1132,9 @@ private:
 	{
 		if (!server_->hasFocus())
 			server_->setText(QString::fromUtf8(s.server));
+		/* while paired, the address can't change by accident: leaving the field after a stray keystroke set a new
+		 * server, which unpaired OBS mid-show (Disconnect first, as in Settings) */
+		server_->setReadOnly(s.link != MS_DISCONNECTED);
 		QString text = QString::fromUtf8(s.message);
 		if (s.link == MS_CONNECTED) {
 			text += " · " + uiText(s.events_live ? "Relay.LiveUpdates" : "Relay.ReconnectingLiveUpdates");
@@ -1337,7 +1349,10 @@ private:
 			obs_data_t *data = obs_data_get_obj(envelope, "data");
 			obs_data_t *user = obs_data_get_obj(data, "user");
 			QString color = str(user, "color");
-			if (color.isEmpty())
+			/* only a colour goes into the style: anything else (CSS such as url(...)) could make Qt read a local
+			 * file on the UI thread */
+			static const QRegularExpression colorPattern("^(#[0-9A-Fa-f]{3,8}|[A-Za-z]{1,20})$");
+			if (!colorPattern.match(color).hasMatch())
 				color = "#8ba3af";
 			if (obs_data_get_bool(data, "join") || str(data, "kind") == "event") {
 				/* API v1.3: "<name> joined" from Instagram/TikTok, and v1.7's kind "event" lines ("<name>
