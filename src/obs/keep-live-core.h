@@ -26,12 +26,13 @@
 extern "C" {
 #endif
 
-#define KL_KEY_MAX 48         /* a scene key (OBS scene UUID, 36 characters) plus room; longer keys are refused */
-#define KL_CLIENT_MAX 64      /* a client id, with its terminating NUL */
-#define KL_MAX_SCENES 16      /* scenes one client may keep live */
-#define KL_MAX_CLIENTS 32     /* clients holding leases at once */
+#define KL_KEY_MAX 48     /* a scene key (OBS scene UUID, 36 characters) plus room; longer keys are refused */
+#define KL_CLIENT_MAX 64  /* a client id, with its terminating NUL */
+#define KL_MAX_SCENES 16  /* scenes one client may keep live */
+#define KL_MAX_CLIENTS 32 /* clients holding leases at once */
 #define KL_MAX_KEYS (KL_MAX_SCENES * KL_MAX_CLIENTS)
-#define KL_LEASE_MIN_S 3      /* leaseSeconds is clamped to [3, 30], default 10 */
+#define KL_MAX_LIVE 12   /* scenes kept live at once, all clients together (the rest are not shown) */
+#define KL_LEASE_MIN_S 3 /* leaseSeconds is clamped to [3, 30], default 10 */
 #define KL_LEASE_MAX_S 30
 #define KL_LEASE_DEFAULT_S 10
 

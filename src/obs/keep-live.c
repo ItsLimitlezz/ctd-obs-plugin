@@ -28,6 +28,7 @@
 #define SETTING_KEY "KeepScenesLive"
 #define EXPIRY_CHECK_S 0.5f
 #define MAX_REQUEST_SCENES 64 /* scene entries read from one request; more are counted as capped */
+#define STATUS_LOG_S 60.0f    /* how often the lease and kept-live counts are logged while any are held */
 
 static pthread_mutex_t lock;
 static pthread_mutex_t status_lock;  /* GetKeepScenesLive's copy of the leases */
@@ -39,8 +40,11 @@ static volatile long enabled = 1;
 static volatile long running;   /* between start and stop */
 static volatile long accepting; /* new leases are taken: running, and OBS isn't closing */
 static volatile long sync_queued;
-static bool in_sync;       /* UI thread only */
-static float tick_elapsed; /* graphics thread only */
+static bool in_sync;               /* UI thread only */
+static float tick_elapsed;         /* graphics thread only */
+static float status_elapsed;       /* graphics thread only */
+static volatile long live_count;   /* ledger.count, for the status log on the graphics thread */
+static volatile long capped_count; /* wanted scenes over KL_MAX_LIVE at the last sync */
 
 static uint64_t now_ms(void)
 {
@@ -87,11 +91,21 @@ static void sync_now(void)
 		return;
 	in_sync = true;
 	pthread_mutex_lock(&lock);
-	const size_t n = os_atomic_load_long(&running) ? kl_union(&leases, wanted, KL_MAX_KEYS) : 0;
+	size_t n = os_atomic_load_long(&running) ? kl_union(&leases, wanted, KL_MAX_KEYS) : 0;
 	pthread_mutex_unlock(&lock);
+	/* Hard cap for all clients together: every scene kept live keeps its sources (browser sources included)
+	 * rendering, so a client asking for many scenes must not keep them all running. The first KL_MAX_LIVE in lease
+	 * order win; the rest are not shown (and a scene dropped by the cap gives its reference back below). */
+	const size_t over = n > KL_MAX_LIVE ? n - KL_MAX_LIVE : 0;
+	if (over)
+		n = KL_MAX_LIVE;
 	size_t acquired = 0, dropped = 0;
 	kl_ledger_sync(&ledger, wanted, n, acquire_scene, drop_scene, NULL, &acquired, &dropped);
 	in_sync = false;
+	os_atomic_set_long(&live_count, (long)ledger.count);
+	if (os_atomic_set_long(&capped_count, (long)over) != (long)over && over)
+		blog(LOG_WARNING, "[CTD] keep-live: CTD apps asked for %zu more scene(s) than the %d kept live at once",
+		     over, KL_MAX_LIVE);
 	if (acquired || dropped)
 		blog(LOG_INFO, "[CTD] keep-live: %zu scene(s) kept live for CTD apps (+%zu, -%zu)", ledger.count,
 		     acquired, dropped);
@@ -131,6 +145,7 @@ static void release_all(const char *why)
 		in_sync = true;
 		scenes = kl_ledger_clear(&ledger, drop_scene, NULL);
 		in_sync = false;
+		os_atomic_set_long(&live_count, 0);
 	}
 	if (clients || scenes)
 		blog(LOG_INFO, "[CTD] keep-live: %s: released %zu scene(s) for %zu client(s)", why, scenes, clients);
@@ -178,12 +193,21 @@ static void tick(void *param, float seconds)
 {
 	UNUSED_PARAMETER(param);
 	tick_elapsed += seconds;
+	status_elapsed += seconds;
 	if (tick_elapsed < EXPIRY_CHECK_S)
 		return;
 	tick_elapsed = 0.0f;
 	pthread_mutex_lock(&lock);
 	const size_t expired = leases.count ? kl_expire(&leases, now_ms()) : 0;
+	const size_t clients = leases.count;
 	pthread_mutex_unlock(&lock);
+	if (status_elapsed >= STATUS_LOG_S) {
+		status_elapsed = 0.0f;
+		const long live = os_atomic_load_long(&live_count);
+		if (clients || live)
+			blog(LOG_INFO, "[CTD] keep-live: status: %zu client lease(s), %ld scene(s) kept live (max %d)",
+			     clients, live, KL_MAX_LIVE);
+	}
 	if (expired) {
 		blog(LOG_INFO, "[CTD] keep-live: %zu client lease(s) ran out without a renewal", expired);
 		request_sync();
@@ -350,6 +374,8 @@ void keep_live_status_request(obs_data_t *request, obs_data_t *response)
 	obs_data_set_bool(response, "ok", true);
 	obs_data_set_bool(response, "enabled", keep_live_enabled());
 	obs_data_set_int(response, "maxScenes", KL_MAX_SCENES);
+	obs_data_set_int(response, "maxLiveScenes", KL_MAX_LIVE);
+	obs_data_set_int(response, "liveScenes", os_atomic_load_long(&live_count));
 	obs_data_set_int(response, "leaseMinSeconds", KL_LEASE_MIN_S);
 	obs_data_set_int(response, "leaseMaxSeconds", KL_LEASE_MAX_S);
 	obs_data_set_int(response, "leaseDefaultSeconds", KL_LEASE_DEFAULT_S);
