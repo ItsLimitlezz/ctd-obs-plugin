@@ -757,17 +757,17 @@ static void tick_ui(void *unused)
 	unlock();
 	obs_data_release(chosen);
 
-	/* one automatic action at a time, only when nothing else runs, and never while an output is active: a queued
-	 * save-up or an automatic pull moves whole bundles and assets, and waits for the show to end (manual actions
-	 * still run) */
-	if (st.available && !st.live && st.busy == SHOW_IDLE && !sy.job_running && !sy.stopping) {
+	/* one automatic action at a time, only when nothing else runs */
+	if (st.available && st.busy == SHOW_IDLE && !sy.job_running && !sy.stopping) {
 		if (sy.pending_upload[0]) {
 			char id[37];
 			snprintf(id, sizeof(id), "%s", sy.pending_upload);
 			sy.pending_upload[0] = '\0';
 			if (!st.message_is_error) /* the Update before it worked (or found no changes) */
 				start_save_up(id, false);
-		} else if (connected) {
+		} else if (connected && !st.live) {
+			/* never while an output is active: a queued save-up or an automatic pull moves whole bundles and
+			 * assets, and waits for the show to end (the user's own Save / Update / Pull still run at once) */
 			bool started = false;
 			cj *due = show_sync_queue_due(now_s());
 			if (cj_size(due)) {
