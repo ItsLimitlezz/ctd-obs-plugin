@@ -6,6 +6,7 @@
 #include "../show/sync.h"
 
 #include <obs-frontend-api.h>
+#include <obs-module.h>
 
 #include <QDateTime>
 #include <QInputDialog>
@@ -22,6 +23,12 @@ namespace {
 
 constexpr int kMaxNameLength = 64;
 
+/* user-visible text, from data/locale */
+QString uiText(const char *key)
+{
+	return QString::fromUtf8(obs_module_text(key));
+}
+
 /* the same wrapping as the dock's other lists */
 void wrapLines(QListWidget *list)
 {
@@ -34,13 +41,13 @@ void wrapLines(QListWidget *list)
 QString nameProblem(const QString &name)
 {
 	if (name.isEmpty())
-		return "Give the show profile a name.";
+		return uiText("Show.NameEmpty");
 	if (name.size() > kMaxNameLength)
-		return QString("Use %1 characters or fewer.").arg(kMaxNameLength);
+		return uiText("Show.NameTooLong").arg(kMaxNameLength);
 	static const QString bad = QStringLiteral("/\\:*?\"<>|");
 	for (const QChar c : name)
 		if (bad.contains(c))
-			return QString("A name can't contain any of these: %1").arg(bad);
+			return uiText("Show.NameBadChars").arg(bad);
 	return QString();
 }
 
@@ -53,13 +60,13 @@ QString relativeTime(const QString &iso)
 	if (secs < 0)
 		return when.toLocalTime().toString(Qt::ISODate);
 	if (secs < 60)
-		return "just now";
+		return uiText("Show.JustNow");
 	if (secs < 3600)
-		return QString("%1 min ago").arg(secs / 60);
+		return uiText("Show.MinutesAgo").arg(secs / 60);
 	if (secs < 86400)
-		return QString("%1 h ago").arg(secs / 3600);
+		return uiText("Show.HoursAgo").arg(secs / 3600);
 	if (secs < 7 * 86400)
-		return QString("%1 d ago").arg(secs / 86400);
+		return uiText("Show.DaysAgo").arg(secs / 86400);
 	return when.toLocalTime().toString("yyyy-MM-dd");
 }
 
@@ -67,31 +74,31 @@ QString detailLine(const show_entry &e, const show_sync_entry *sync, bool connec
 {
 	QStringList chips;
 	if (e.active)
-		chips << "Active";
+		chips << uiText("Show.Chip.Active");
 	const show_sync_status status = sync ? sync->status : SHOW_SYNC_LOCAL_ONLY;
 	if (status == SHOW_SYNC_CONFLICT)
-		chips << QString("Changed on Relay (rev %1)").arg(sync->remote_head);
+		chips << uiText("Show.Chip.Conflict").arg(sync->remote_head);
 	else if (e.dirty)
-		chips << "Not backed up";
+		chips << uiText("Show.Chip.NotBackedUp");
 	if (sync && sync->queued)
-		chips << "Waiting for Relay";
+		chips << uiText("Show.Chip.Waiting");
 	if (sync && sync->update_ready)
-		chips << "Update ready";
+		chips << uiText("Show.Chip.UpdateReady");
 	else if (status == SHOW_SYNC_UPDATE_READY)
-		chips << QString("Newer on Relay (rev %1)").arg(sync->remote_head);
+		chips << uiText("Show.Chip.Newer").arg(sync->remote_head);
 	if (!connected && e.relay_profile_id && *e.relay_profile_id)
-		chips << "Relay offline \xE2\x80\x94 local copy";
-	chips << (e.revision > 0 ? QString("rev %1").arg(e.revision) : QString("Local only"));
+		chips << uiText("Show.Chip.RelayOffline");
+	chips << (e.revision > 0 ? uiText("Show.Chip.Revision").arg(e.revision) : uiText("Show.Chip.LocalOnly"));
 	if (e.needs_reentry > 0)
-		chips << QString("%1 needs re-entry").arg(e.needs_reentry);
+		chips << uiText("Show.Chip.NeedsReentry").arg(e.needs_reentry);
 	if (e.saved_at && *e.saved_at)
-		chips << QString("Saved %1").arg(relativeTime(QString::fromUtf8(e.saved_at)));
+		chips << uiText("Show.Chip.Saved").arg(relativeTime(QString::fromUtf8(e.saved_at)));
 	return chips.join(QString::fromUtf8("  \xC2\xB7  "));
 }
 
 } // namespace
 
-ShowProfilesSection::ShowProfilesSection(QWidget *parent) : QGroupBox("Show Profiles", parent)
+ShowProfilesSection::ShowProfilesSection(QWidget *parent) : QGroupBox(uiText("Show.Title"), parent)
 {
 	auto *layout = new QVBoxLayout(this);
 	layout->setSpacing(8);
@@ -109,10 +116,10 @@ ShowProfilesSection::ShowProfilesSection(QWidget *parent) : QGroupBox("Show Prof
 	/* stacked, not side by side, so the dock stays narrow enough for a side dock area */
 	auto *buttons = new QVBoxLayout();
 	buttons->setSpacing(6);
-	switch_ = new QPushButton("Switch to selected", this);
-	save_ = new QPushButton("Save current setup as\xE2\x80\xA6", this);
-	update_ = new QPushButton("Update selected from current setup", this);
-	delete_ = new QPushButton("Delete selected", this);
+	switch_ = new QPushButton(uiText("Show.Switch"), this);
+	save_ = new QPushButton(uiText("Show.SaveAs"), this);
+	update_ = new QPushButton(uiText("Show.Update"), this);
+	delete_ = new QPushButton(uiText("Show.Delete"), this);
 	ctd::button(switch_, ctd::Role::Primary);
 	ctd::button(save_);
 	ctd::button(update_);
@@ -134,9 +141,9 @@ ShowProfilesSection::ShowProfilesSection(QWidget *parent) : QGroupBox("Show Prof
 	layout->addWidget(progress_);
 	auto *sync = new QVBoxLayout();
 	sync->setSpacing(6);
-	saveUp_ = new QPushButton("Save selected to CTD Relay", this);
-	updateNow_ = new QPushButton("Update now (apply the downloaded revision)", this);
-	devices_ = new QPushButton("Devices\xE2\x80\xA6", this);
+	saveUp_ = new QPushButton(uiText("Show.SaveUp"), this);
+	updateNow_ = new QPushButton(uiText("Show.UpdateNow"), this);
+	devices_ = new QPushButton(uiText("Show.Devices"), this);
 	ctd::button(saveUp_);
 	ctd::button(updateNow_);
 	ctd::button(devices_);
@@ -147,14 +154,14 @@ ShowProfilesSection::ShowProfilesSection(QWidget *parent) : QGroupBox("Show Prof
 	layout->addLayout(sync);
 
 	/* show profiles on CTD Relay that aren't on this machine yet */
-	remoteTitle_ = new QLabel("On CTD Relay, not on this machine", this);
+	remoteTitle_ = new QLabel(uiText("Show.RemoteTitle"), this);
 	remoteTitle_->setWordWrap(true);
 	remoteTitle_->setProperty("ctdRole", "muted");
 	remote_ = new QListWidget(this);
 	remote_->setMinimumHeight(48);
 	remote_->setMaximumHeight(110);
 	wrapLines(remote_);
-	pull_ = new QPushButton("Download selected from CTD Relay", this);
+	pull_ = new QPushButton(uiText("Show.Pull"), this);
 	ctd::button(pull_);
 	layout->addWidget(remoteTitle_);
 	layout->addWidget(remote_);
@@ -260,10 +267,7 @@ void ShowProfilesSection::refresh()
 				message += (message.isEmpty() ? QString() : QString("\n")) +
 					   QString::fromUtf8("\xE2\x80\xA2 ") + QString::fromUtf8(w);
 		}
-		if (s.message_is_error)
-			status_->setStyleSheet("color: #e5a50a; font-weight: bold;");
-		else
-			status_->setStyleSheet(QString());
+		ctd::setWarning(status_, s.message_is_error, "muted"); /* status_ is muted normally */
 		status_->setText(message);
 	}
 
@@ -277,11 +281,11 @@ void ShowProfilesSection::updateButtons()
 	const bool idle = busy_ == SHOW_IDLE;
 	const QString id = selectedId();
 	const bool active = !id.isEmpty() && id == activeId_;
-	const QString working = "Working\xE2\x80\xA6";
+	const QString working = uiText("Show.Working");
 
 	/* the reason is shown in the status line too, not only in a tooltip */
 	QString line = status_->text();
-	const QString liveLine = QString("Switching is off while live: %1").arg(liveReason_);
+	const QString liveLine = uiText("Show.LiveLine").arg(liveReason_);
 	const QString marker = "\n" + liveLine;
 	if (line.endsWith(marker))
 		line.chop(marker.size());
@@ -296,38 +300,37 @@ void ShowProfilesSection::updateButtons()
 	switch_->setEnabled(idle && !live_ && !id.isEmpty());
 	switch_->setToolTip(!idle          ? working
 			    : live_        ? liveReason_
-			    : id.isEmpty() ? QString("Select a show profile first")
-			    : active       ? QString("Reload this show profile")
+			    : id.isEmpty() ? uiText("Show.Tip.SelectFirst")
+			    : active       ? uiText("Show.Tip.Reload")
 					   : QString());
 	save_->setEnabled(idle);
 	save_->setToolTip(idle ? QString() : working);
 	update_->setEnabled(idle && active);
 	update_->setToolTip(!idle          ? working
-			    : id.isEmpty() ? QString("Select the active show profile first")
-			    : !active      ? QString("Only the active show profile can be updated; switch to it first")
+			    : id.isEmpty() ? uiText("Show.Tip.SelectActive")
+			    : !active      ? uiText("Show.Tip.OnlyActive")
 					   : QString());
 	const auto syncFound = sync_.constFind(id);
 	const bool linked = syncFound != sync_.constEnd() && syncFound->status != SHOW_SYNC_LOCAL_ONLY;
 	saveUp_->setEnabled(idle && !id.isEmpty() && relayConnected_ && (linked || !relayProfileName_.isEmpty()));
-	saveUp_->setToolTip(!idle              ? working
-			    : id.isEmpty()     ? QString("Select a show profile first")
-			    : !relayConnected_ ? QString("Connect the dock to CTD Relay first")
-			    : linked           ? QString("Back up the newest saved revision to CTD Relay")
-			    : relayProfileName_.isEmpty()
-				    ? QString("Pick a CTD Relay profile above first")
-				    : QString("Links it to the CTD Relay profile %1").arg(relayProfileName_));
+	saveUp_->setToolTip(!idle                         ? working
+			    : id.isEmpty()                ? uiText("Show.Tip.SelectFirst")
+			    : !relayConnected_            ? uiText("Show.Tip.ConnectRelay")
+			    : linked                      ? uiText("Show.Tip.BackUp")
+			    : relayProfileName_.isEmpty() ? uiText("Show.Tip.PickRelayProfile")
+							  : uiText("Show.Tip.Links").arg(relayProfileName_));
 	const auto activeSync = sync_.constFind(activeId_);
 	const bool ready = activeSync != sync_.constEnd() && activeSync->update_ready;
 	updateNow_->setVisible(ready);
 	updateNow_->setEnabled(idle && !live_);
 	updateNow_->setToolTip(live_ ? liveReason_ : QString());
 	devices_->setEnabled(!activeId_.isEmpty());
-	devices_->setToolTip(activeId_.isEmpty() ? QString("Switch to a show profile first") : QString());
+	devices_->setToolTip(activeId_.isEmpty() ? uiText("Show.Tip.SwitchFirst") : QString());
 	pull_->setEnabled(idle && relayConnected_ && remote_->currentItem() && remote_->currentItem()->isSelected());
 	delete_->setEnabled(idle && !id.isEmpty() && !active);
 	delete_->setToolTip(!idle          ? working
-			    : id.isEmpty() ? QString("Select a show profile first")
-			    : active       ? QString("The active show profile can't be deleted")
+			    : id.isEmpty() ? uiText("Show.Tip.SelectFirst")
+			    : active       ? uiText("Show.Tip.ActiveNoDelete")
 					   : QString());
 }
 
@@ -336,10 +339,8 @@ void ShowProfilesSection::askSwitch()
 	const QString id = selectedId();
 	if (id.isEmpty())
 		return;
-	const auto answer = QMessageBox::question(
-		this, "CTD Relay",
-		QString("Switch to %1?\n\nOBS loads its scenes and settings; the current ones stay saved.")
-			.arg(selectedName()));
+	const auto answer = QMessageBox::question(this, uiText("Common.DialogTitle"),
+						  uiText("Show.Ask.Switch").arg(selectedName()));
 	if (answer != QMessageBox::Yes)
 		return;
 	if (!show_switch(id.toUtf8().constData(), 0))
@@ -349,16 +350,16 @@ void ShowProfilesSection::askSwitch()
 void ShowProfilesSection::askSave()
 {
 	bool ok = false;
-	QString name = QInputDialog::getText(this, "CTD Relay", "Name for this show profile:", QLineEdit::Normal,
-					     QString(), &ok);
+	QString name = QInputDialog::getText(this, uiText("Common.DialogTitle"), uiText("Show.Ask.Name"),
+					     QLineEdit::Normal, QString(), &ok);
 	while (ok) {
 		name = name.trimmed();
 		const QString problem = nameProblem(name);
 		if (problem.isEmpty())
 			break;
-		QMessageBox::warning(this, "CTD Relay", problem);
-		name = QInputDialog::getText(this, "CTD Relay", "Name for this show profile:", QLineEdit::Normal, name,
-					     &ok);
+		QMessageBox::warning(this, uiText("Common.DialogTitle"), problem);
+		name = QInputDialog::getText(this, uiText("Common.DialogTitle"), uiText("Show.Ask.Name"),
+					     QLineEdit::Normal, name, &ok);
 	}
 	if (!ok)
 		return;
@@ -371,8 +372,8 @@ void ShowProfilesSection::askUpdate()
 	const QString id = selectedId();
 	if (id.isEmpty() || id != activeId_)
 		return;
-	const auto answer = QMessageBox::question(
-		this, "CTD Relay", QString("Save OBS's current setup as a new revision of %1?").arg(selectedName()));
+	const auto answer = QMessageBox::question(this, uiText("Common.DialogTitle"),
+						  uiText("Show.Ask.Update").arg(selectedName()));
 	if (answer != QMessageBox::Yes)
 		return;
 	if (!show_update(id.toUtf8().constData()))
@@ -384,11 +385,8 @@ void ShowProfilesSection::askDelete()
 	const QString id = selectedId();
 	if (id.isEmpty() || id == activeId_)
 		return;
-	const auto answer = QMessageBox::question(
-		this, "CTD Relay",
-		QString("Delete %1?\n\nThis removes its saved copy here. OBS's own scene collection and profile "
-			"files are not deleted.")
-			.arg(selectedName()));
+	const auto answer = QMessageBox::question(this, uiText("Common.DialogTitle"),
+						  uiText("Show.Ask.Delete").arg(selectedName()));
 	if (answer != QMessageBox::Yes)
 		return;
 	if (!show_delete(id.toUtf8().constData()))
@@ -412,12 +410,12 @@ void ShowProfilesSection::showProgress(const show_sync_state &sync)
 		progress_->setRange(0, 1000);
 		progress_->setValue((int)(fraction > 1.0 ? 1000 : fraction * 1000));
 		if (sync.total > 100000)
-			progress_->setFormat(QString("%1  %2 / %3 MB")
+			progress_->setFormat(uiText("Show.Progress.Megabytes")
 						     .arg(step)
 						     .arg((double)sync.done / 1048576.0, 0, 'f', 1)
 						     .arg((double)sync.total / 1048576.0, 0, 'f', 1));
 		else
-			progress_->setFormat(QString("%1  %2 of %3").arg(step).arg(sync.done).arg(sync.total));
+			progress_->setFormat(uiText("Show.Progress.Count").arg(step).arg(sync.done).arg(sync.total));
 	}
 	progress_->show();
 }
@@ -433,9 +431,10 @@ void ShowProfilesSection::showRemotes(const show_sync_state &sync)
 		const show_sync_remote &r = sync.remotes[i];
 		if (r.local_id[0])
 			continue;
-		QString line = QString::fromUtf8(r.name) + "\n" + QString("rev %1").arg(r.head);
+		QString line = QString::fromUtf8(r.name) + "\n" + uiText("Show.Chip.Revision").arg(r.head);
 		if (r.saved_by && *r.saved_by)
-			line += QString::fromUtf8("  \xC2\xB7  saved on ") + QString::fromUtf8(r.saved_by);
+			line += QString::fromUtf8("  \xC2\xB7  ") +
+				uiText("Show.Remote.SavedOn").arg(QString::fromUtf8(r.saved_by));
 		auto *item = new QListWidgetItem(line, remote_);
 		item->setData(Qt::UserRole, QString::fromUtf8(r.relay_profile_id));
 		item->setData(Qt::UserRole + 1, QString::fromUtf8(r.name));
@@ -457,13 +456,11 @@ void ShowProfilesSection::askSaveUp()
 		return;
 	const auto found = sync_.constFind(id);
 	const bool linked = found != sync_.constEnd() && found->status != SHOW_SYNC_LOCAL_ONLY;
-	QString text = id == activeId_ ? QString("Save the current setup of %1 and back it up to CTD Relay?")
-				       : QString("Back up the newest saved revision of %1 to CTD Relay?");
+	QString text = uiText(id == activeId_ ? "Show.Ask.SaveUpActive" : "Show.Ask.SaveUp");
 	text = text.arg(selectedName());
 	if (!linked)
-		text += QString("\n\nIt is linked to the CTD Relay profile %1: other machines can then download it.")
-				.arg(relayProfileName_);
-	if (QMessageBox::question(this, "CTD Relay", text) != QMessageBox::Yes)
+		text += "\n\n" + uiText("Show.Ask.SaveUpLink").arg(relayProfileName_);
+	if (QMessageBox::question(this, uiText("Common.DialogTitle"), text) != QMessageBox::Yes)
 		return;
 	if (!show_sync_save_up(id.toUtf8().constData()))
 		refresh(); /* the status line says why */
@@ -476,10 +473,11 @@ void ShowProfilesSection::askPull()
 		return;
 	const QString relay = item->data(Qt::UserRole).toString();
 	const QString name = item->data(Qt::UserRole + 1).toString();
-	QMessageBox box(QMessageBox::Question, "CTD Relay",
-			QString("Download %1's show profile to this machine?").arg(name), QMessageBox::NoButton, this);
-	QPushButton *download = box.addButton("Download", QMessageBox::AcceptRole);
-	QPushButton *andSwitch = live_ ? nullptr : box.addButton("Download and switch", QMessageBox::AcceptRole);
+	QMessageBox box(QMessageBox::Question, uiText("Common.DialogTitle"), uiText("Show.Ask.Pull").arg(name),
+			QMessageBox::NoButton, this);
+	QPushButton *download = box.addButton(uiText("Show.Download"), QMessageBox::AcceptRole);
+	QPushButton *andSwitch = live_ ? nullptr
+				       : box.addButton(uiText("Show.DownloadAndSwitch"), QMessageBox::AcceptRole);
 	box.addButton(QMessageBox::Cancel);
 	box.exec();
 	const QAbstractButton *clicked = box.clickedButton();
@@ -493,9 +491,7 @@ void ShowProfilesSection::askUpdateNow()
 {
 	if (activeId_.isEmpty())
 		return;
-	const auto answer = QMessageBox::question(
-		this, "CTD Relay",
-		"Apply the revision downloaded from CTD Relay now?\n\nOBS reloads this show profile's scenes and settings.");
+	const auto answer = QMessageBox::question(this, uiText("Common.DialogTitle"), uiText("Show.Ask.UpdateNow"));
 	if (answer != QMessageBox::Yes)
 		return;
 	if (!show_switch(activeId_.toUtf8().constData(), 0))
@@ -525,19 +521,15 @@ void ShowProfilesSection::askConflict()
 	conflictOpen_ = true;
 	QMessageBox box(this);
 	box.setIcon(QMessageBox::Warning);
-	box.setWindowTitle("CTD Relay");
-	box.setText(QString("%1 changed on CTD Relay%2 (revision %3) since this machine's copy.")
-			    .arg(name, by.isEmpty() ? QString() : QString(" from %1").arg(by))
+	box.setWindowTitle(uiText("Common.DialogTitle"));
+	box.setText(uiText("Show.Conflict.Text")
+			    .arg(name, by.isEmpty() ? QString() : " " + uiText("Show.Conflict.From").arg(by))
 			    .arg(head));
-	box.setInformativeText("Nothing is lost whichever you pick: every revision stays in CTD Relay's history.\n\n"
-			       "Keep mine: your version becomes the newest on CTD Relay.\n"
-			       "Take theirs: this machine gets theirs; yours stays as an older local revision.\n"
-			       "Save as new profile: yours becomes a separate local show profile, and this one takes "
-			       "theirs.");
-	QPushButton *mine = box.addButton("Keep mine", QMessageBox::AcceptRole);
-	QPushButton *theirs = box.addButton("Take theirs", QMessageBox::AcceptRole);
-	QPushButton *asNew = box.addButton("Save as new profile", QMessageBox::AcceptRole);
-	QPushButton *later = box.addButton("Decide later", QMessageBox::RejectRole);
+	box.setInformativeText(uiText("Show.Conflict.Info"));
+	QPushButton *mine = box.addButton(uiText("Show.Conflict.KeepMine"), QMessageBox::AcceptRole);
+	QPushButton *theirs = box.addButton(uiText("Show.Conflict.TakeTheirs"), QMessageBox::AcceptRole);
+	QPushButton *asNew = box.addButton(uiText("Show.Conflict.SaveAsNew"), QMessageBox::AcceptRole);
+	QPushButton *later = box.addButton(uiText("Show.Conflict.Later"), QMessageBox::RejectRole);
 	box.setDefaultButton(later);
 	box.exec();
 	conflictOpen_ = false;

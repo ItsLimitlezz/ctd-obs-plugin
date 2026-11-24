@@ -52,8 +52,8 @@ what is happening upstream, and to keep feeds aligned with each other.
 
 | Piece | What it is |
 |---|---|
-| **CTD Live Source (SRT)** | The OBS source. One per feed. Add as many as you want to any scene. Name stays as in v1 so existing scenes keep working. |
-| **CTD Hub** | An OBS dock (Docks menu). Lists the server's streams, adds them to scenes, shows issues and sync groups. |
+| **CTD Live Source** | The OBS source. One per feed. Add as many as you want to any scene. Only its display name changed (it was "CTD Live Source (SRT)"); its source type id stays as in v1 so existing scenes keep working. |
+| **CTD Relay · Feeds** | An OBS dock (Docks menu), the incoming-feeds side of CTD Relay (first shipped as "CTD Hub"; there is no separate CTD Hub, CTD Relay is the hub: [docs/relay-is-the-hub.md](docs/relay-is-the-hub.md)). Lists the server's streams, adds them to scenes, shows issues and sync groups. |
 | **Server profiles** | Saved MediaMTX connections (address, ports, API, credentials). Sources point at a profile + path, never a raw URL. |
 | **Engine** | The connect/demux/decode/clock/audio/timecode core, with no libobs dependency (section 10). |
 | **ctd-live-probe** | A command-line tool built from the engine, used by CI and for debugging without OBS. |
@@ -98,7 +98,7 @@ the earlier v2 spec so existing notes stay valid.
 - **R7.** Always hand OBS **48 kHz, stereo, float planar**, whatever arrives (8 to 96 kHz, mono or stereo, any sample
   format AAC, Opus or MP3 decoders produce), via libswresample (OBS ships it).
 - **R8.** Rebuild the resampler on the fly when rate, layout or format changes: no reconnect, no gap longer than one
-  audio frame, and a log line (`[ctd-live:Cam 1] audio format changed 48000 Hz stereo → 16000 Hz mono`).
+  audio frame, and a log line (`[CTD] live-source: Cam 1: audio format changed 48000 Hz stereo → 16000 Hz mono`).
 - **R9.** Mono becomes dual mono (centre), not left only.
 
 ### 4.5 Signal loss
@@ -118,9 +118,9 @@ the earlier v2 spec so existing notes stay valid.
 
 ### 4.6 Observability and controls
 - **R16.** Stats in properties: state, lateness/target, compensation, input (resolution, codec, fps, audio rate and
-  channels), resyncs, reconnects, upstream RTT/loss/bitrate (from the hub poller, section 5).
+  channels), resyncs, reconnects, upstream RTT/loss/bitrate (from the feed server poller, section 5).
 - **R17.** **Reconnect now** button.
-- **R18.** Every log line prefixed `[ctd-live:<source name>]`.
+- **R18.** Every log line prefixed `[CTD] live-source: <source name>:` (it was `[ctd-live:<source name>]`).
 
 ### 4.7 Hardware decode
 - **R19.** **Decoder:** Auto (default), Software, Hardware. Auto tries `d3d12va` then `dxva2` (Windows),
@@ -150,7 +150,7 @@ the earlier v2 spec so existing notes stay valid.
 
 ---
 
-## 5. Milestone 2: the hub (MediaMTX sync, many feeds)
+## 5. Milestone 2: incoming feeds (MediaMTX sync, many feeds)
 
 ### 5.1 Server profiles
 - **H1.** Profiles are stored in the plugin's own config (`obs_module_config_path`), not in the scene collection, so
@@ -173,13 +173,13 @@ the earlier v2 spec so existing notes stay valid.
   spamming the log. Test against the latest release and the version CTD Live Server pins. Document the minimum
   supported version in the README.
 - **H7.** The API being down, slow or unauthorised never affects playback. It shows as a profile status
-  ("API unreachable", "API login failed") in the hub.
-- **H8.** **Optional config writes**, off unless "Allow CTD Hub to change MediaMTX" is ticked on the profile:
+  ("API unreachable", "API login failed") in the Feeds dock.
+- **H8.** **Optional config writes**, off unless "Allow CTD Relay · Feeds to change this MediaMTX" is ticked on the profile:
   create a path, remove a path, and **kick a publisher** (`POST /v3/<protocol>conns/kick/<id>`) to force a stuck
   camera to reconnect. Every write asks for confirmation in the UI and is logged.
 
 ### 5.3 The dock
-- **H9.** **CTD Hub** dock, built in Qt with the OBS frontend API, styled to match OBS's theme. Top: profile picker
+- **H9.** **CTD Relay · Feeds** dock, built in Qt with the OBS frontend API, styled to match OBS's theme. Top: profile picker
   and its status (connected, MediaMTX version, API latency).
 - **H10.** **Streams list**, one row per path: live dot, name, publisher protocol and remote address, resolution,
   codec, fps, bitrate sparkline, RTT and loss (SRT publishers), an issues badge (section 6.1), and an "in OBS" badge
@@ -234,7 +234,7 @@ Custom Browser Docks**.
   re-sent at least every 60 s) and send requests such as `overlay.create` to CTD Overlay with `POST /messages`;
   replies arrive as `app.message` events. The registration offers the plugin's own capabilities (to be defined,
   e.g. which feeds are live in OBS).
-- **H23.** **Status panel** in the CTD Hub dock for the chosen profile: the session (status, title, a TEST badge in
+- **H23.** **Status panel** in the CTD Relay dock for the chosen profile: the session (status, title, a TEST badge in
   test mode), each feed (landscape, vertical) with its bitrate, and one row per destination: platform, name, live
   or **down** (red, with the server's `message` as the reason), bitrate, fps, viewers and recoveries. One poller on
   its own thread reads `GET /status?profile=` every 2 s.
@@ -256,7 +256,7 @@ Custom Browser Docks**.
 - **D1.** Each source and profile runs a small rules engine over its stats and the poller data. An issue has: id,
   severity (info, warning, critical), source, first seen, last seen, a plain-language title, the likely cause, and
   zero or more **fix actions**.
-- **D2.** Issues appear in the CTD Hub issues panel (newest first), as a badge on the stream row, in the source's
+- **D2.** Issues appear in the Feeds dock's issues panel (newest first), as a badge on the stream row, in the source's
   stats, in the OBS log (raised and cleared), and through the control API (section 9). An issue clears itself after
   its condition has been gone for 10 s.
 - **D3.** No alert storms: one issue per (source, rule) at a time; flapping conditions are held for 10 s before
@@ -284,7 +284,7 @@ Custom Browser Docks**.
 | A/V drift | soft correction pinned at its limit for 30 s | Informational (sender clock is far off) |
 | Sync lost | a sync-group member lost timecode or exceeded the group's max delay | section 8 |
 
-- **D4.** A fix action is one click in the hub and one vendor request in the API. Actions that change settings say
+- **D4.** A fix action is one click in the Feeds dock and one vendor request in the API. Actions that change settings say
   what they change and can be undone from the same issue entry.
 - **D5.** **Auto-fix** (per source, off by default): apply the safe fixes automatically (hardware decode, local SRT
   latency, dead-channel repair) and log what was done.
@@ -294,7 +294,7 @@ Custom Browser Docks**.
 ## 7. Milestone 4: audio repair
 
 Section 4.4 makes every feed 48 kHz stereo. Audio repair is for feeds that are wrong in other ways, set per source
-in properties and the hub.
+in properties and the Feeds dock.
 
 - **A1.** **Channels:** Stereo (as is), Left on both, Right on both, Mono mix, Swap left and right, Invert right
   channel polarity.
@@ -354,11 +354,11 @@ in properties and the hub.
 - **S13.** A member that loses timecode **freewheels** on its last delay and raises "Sync lost"; it relocks when
   timecode returns. A member that reconnects keeps its previous delay as the starting guess.
 - **S14.** Manual delays (S1) add on top of the group delay, so a known in-camera A/V offset can still be trimmed.
-- **S15.** The hub shows each group: members, timecode per member, measured offset, applied delay, lock state.
+- **S15.** The Feeds dock shows each group: members, timecode per member, measured offset, applied delay, lock state.
 
 ### 8.4 Sync check (optional, after the above)
 - **S16.** A **sync check** for one feed: the user plays the plugin's sync clip (white flash and 1 kHz beep once a
-  second, the same signal the test harness uses; downloadable from the hub) on a phone or tablet in front of the
+  second, the same signal the test harness uses; opened from the Feeds dock) on a phone or tablet in front of the
   camera. The plugin measures the A/V offset in that feed over 10 s and offers to set S1's delays.
 
 ---
@@ -394,7 +394,7 @@ in properties and the hub.
   without bundling trouble; otherwise a minimal HTTP/1.1 client over sockets is fine (MediaMTX's API is plain JSON
   over HTTP). JSON via a small vendored parser (cJSON or similar, MIT).
 - **E3.** `src/obs/` (C): the OBS source, properties, config storage, obs-websocket vendor, webhook.
-- **E4.** `src/ui/` (C++, Qt6): the CTD Hub dock.
+- **E4.** `src/ui/` (C++, Qt6): the CTD Relay and CTD Relay · Feeds docks.
 - **E5.** `tools/ctd-live-probe/`: the CLI on top of the engine: `ctd-live-probe --host --port --path
   [--seconds N] [--json]`. Prints state, lateness, fps, audio rate, compensation, drops, resyncs, timecode, issues
   and measured A/V offset every second; non-zero exit if an acceptance bound is broken.
@@ -469,10 +469,10 @@ OBS mid-reconnect.
 7. Hardware decode: R19, R20.
 8. Stats, Reconnect now, log prefixes: R16 to R18.
 
-**Milestone 2: hub**
+**Milestone 2: incoming feeds**
 9. Server profiles and credentials: H1 to H4.
 10. API client and poller: E2, H5 to H7 (T14).
-11. CTD Hub dock, streams list and add to scene: H9 to H12, H14. Then, in its own PRs, CTD Multi-Stream:
+11. CTD Relay · Feeds dock, streams list and add to scene: H9 to H12, H14. Then, in its own PRs, CTD Multi-Stream:
     pairing, profile and status/chat panel (H18, H19, H23, H24, H26), then destinations and overlays (H20 to H22).
     H25's issue waits for step 13.
 12. Many feeds, auto-add, optional config writes: H8, H13, H15 to H17, plus the obs-websocket vendor skeleton (I1)

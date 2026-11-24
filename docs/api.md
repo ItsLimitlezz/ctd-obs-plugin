@@ -5,7 +5,7 @@ The plugin can be driven and read three ways:
 | Way | For | How |
 |---|---|---|
 | **obs-websocket vendor `ctd`** | anything that already talks to OBS (CTD Live Studio, scripts, Stream Deck, an overlay) | `CallVendorRequest` with `vendorName: "ctd"`; events arrive as `VendorEvent` |
-| **Webhook** | things that don't speak OBS WebSocket (a graphics server, a bot) | set a URL on a server profile (Tools ▸ CTD Live servers); events are POSTed as JSON |
+| **Webhook** | things that don't speak OBS WebSocket (a graphics server, a bot) | set a URL on a server profile (Feed servers…); events are POSTed as JSON |
 | **CTD Relay** | CTD Live mobile, CTD Overlay and the rest of the CTD family | pair in Docks ▸ CTD Relay; events go to Relay's `/apps/{appId}/events` |
 
 Every request answers with JSON. A request that can fail has `"ok": true|false`, and an `"error"` (or `"message"`) when it
@@ -61,7 +61,7 @@ The answer is in `d.responseData.responseData`. To receive the events, identify 
 ```
 
 **`KickPublisher`** `{serverId?, path}` — drops the camera publishing to `path` so it reconnects. Only on a profile with
-"Allow CTD Hub to change this MediaMTX".
+"Allow CTD Relay · Feeds to change this MediaMTX".
 
 ```json
 {"ok": true, "message": "Kicked the publisher of \"mob944\": the camera should reconnect."}
@@ -174,6 +174,56 @@ Vertical's (a canvas taller than wide), otherwise the canvas's name.
 Each canvas carries `scenes`, its whole scene list (groups left out), so an app can offer every scene before OBS ever
 switches to it. Past 80 scenes the list stops there and `scenesTruncated` is `true` (CTD Relay takes at most 8 KB per
 event).
+
+### Keeping multiview scenes live
+
+OBS only runs a scene's sources while something shows it: Program, studio-mode Preview, OBS's Multiview or a projector.
+A screenshot (`GetSourceScreenshot`) shows a scene for one frame only, so in an app's multiview the other scenes'
+browser, game/window/display capture and "deactivate when not showing" camera sources hold their last frame. While an app
+renews a lease, the plugin keeps the scenes it names showing, the way OBS's own Multiview does.
+
+**`KeepScenesLive`** `{clientId, scenes, leaseSeconds?}` — keeps these scenes live for this client until the lease
+ends. Renew it well inside the lease (CTD Live Studio: every 5 s with a 10 s lease); each call **replaces** the client's
+set, so a scene left out is let go at once, and an empty `scenes` releases everything.
+
+| Field | |
+|---|---|
+| `clientId` | the app's own id, 1 to 63 characters, the same on every renewal (e.g. a UUID made at launch) |
+| `scenes` | `[{"sceneName": "Camera 2"}, {"sceneUuid": "77aa…"}, …]`: each an **object** (obs-websocket drops plain strings inside arrays on the way to a vendor). `sceneUuid` wins when both are given. Groups and sources other than scenes are refused |
+| `leaseSeconds` | default 10, clamped to 3–30 |
+
+```json
+{"ok": true, "enabled": true, "clientId": "live-studio-3f1c…", "leaseSeconds": 10, "maxScenes": 16,
+ "held": [{"sceneName": "Camera 2", "sceneUuid": "77aa…"}], "missing": [{"sceneName": "Old scene"}], "capped": 0}
+```
+
+At most `maxScenes` (16) scenes per client are kept; the rest are counted in `capped`. Scenes that don't exist are in
+`missing`. With Settings ▸ CTD ▸ **Let CTD apps keep multiview scenes live** turned off (stock OBS: in the Tools menu) the answer is
+`{"ok": false, "enabled": false, "error": "…"}`: show the tile as paused. Without the plugin, obs-websocket answers
+`CallVendorRequest` with a failed request status (no vendor `ctd`, or no such request on an older plugin): same
+fallback.
+
+A client's scenes are let go when its lease runs out without a renewal (obs-websocket doesn't tell vendors that a
+client disconnected, so this is how a vanished app is noticed), on `ReleaseScenesLive`, when a scene is removed or
+renamed (it drops out of every lease; the next renewal by name picks the new one up), when the scene collection
+changes, when the setting is turned off and when OBS closes. A scene several clients want is shown once.
+
+Live scenes cost what they would on Program: more CPU and GPU, and their cameras stay active.
+
+**`ReleaseScenesLive`** `{clientId}` — lets this client's scenes go now (call it when the multiview is hidden and on
+disconnect).
+
+```json
+{"ok": true, "released": true}
+```
+
+**`GetKeepScenesLive`** — the setting, the limits and the leases.
+
+```json
+{"ok": true, "enabled": true, "maxScenes": 16, "leaseMinSeconds": 3, "leaseMaxSeconds": 30, "leaseDefaultSeconds": 10,
+ "clients": [{"clientId": "live-studio-3f1c…", "expiresInSeconds": 7.4,
+   "scenes": [{"sceneName": "Camera 2", "sceneUuid": "77aa…"}]}]}
+```
 
 ## Events
 

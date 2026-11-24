@@ -4,7 +4,11 @@ cmake_minimum_required(VERSION 3.28...3.30)
 # dependencies. Everything below this block is the standalone plugin build.
 if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
   find_package(Qt6 REQUIRED Core Widgets)
-  find_package(FFmpeg REQUIRED COMPONENTS avcodec avformat avutil swresample swscale)
+  find_package(
+    FFmpeg
+    REQUIRED
+    COMPONENTS avcodec avformat avutil swresample swscale
+  )
   # Show Profiles file transfers (S2): the libcurl OBS itself builds against
   find_package(CURL REQUIRED)
 
@@ -43,6 +47,8 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       src/obs/ctd-live-source.c
       src/obs/ctd-settings.c
       src/obs/issues.c
+      src/obs/keep-live-core.c
+      src/obs/keep-live.c
       src/obs/loss-card.c
       src/obs/loss-video.c
       src/obs/obs-watch.c
@@ -51,7 +57,10 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       src/obs/webhook.c
       src/obs/ws-vendor.c
       src/obsws-config.c
+      src/overlay-scenes.c
+      src/overlays-core.c
       src/plugin-main.c
+      src/relay-encoder.c
       src/show/apply.c
       src/show/assets.c
       src/show/bundle.c
@@ -74,9 +83,14 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       src/show/sync.c
       src/show/tar.c
       src/ui/device-map-dialog.cpp
-      src/ui/hub-dock.cpp
+      src/ui/feeds-dock.cpp
       src/ui/multistream-dock.cpp
+      src/ui/overlay-sources.cpp
+      src/ui/overlays-dock.cpp
+      src/ui/producer-core.c
+      src/ui/producer-dock.cpp
       src/ui/servers-dialog.cpp
+      src/ui/settings-section.cpp
       src/ui/show-section.cpp
   )
   target_include_directories(ctd-live-source PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
@@ -166,12 +180,20 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ctd-engine)
 
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/plugin-main.c src/obs/ctd-live-source.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/loss-card.c src/obs/loss-video.c src/api/mediamtx-api.c)
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/api/poller.c src/ui/hub-dock.cpp src/obs/ws-vendor.c)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/api/poller.c src/ui/feeds-dock.cpp src/obs/ws-vendor.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/issues.c src/obs/sync-groups.c src/obs/webhook.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/obs-watch.c src/obs/servers.c src/ui/servers-dialog.cpp)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/ctd-settings.c)
+# A source per CTD Overlay scene in the CTD Relay dock; pure C, tested on its own: test/overlay-scenes
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/overlay-scenes.c)
+# What a stream to CTD Relay has to be (H.264 + AAC) and which encoder "Send stream" switches to; pure C, tested on
+# its own: test/relay-encoder
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/relay-encoder.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/http-client.c src/multistream.c src/ui/multistream-dock.cpp)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obsws-config.c)
+# Keep scenes live for CTD apps' multiviews (bug B1). keep-live-core.c is pure C with its own tests:
+#   cmake --build --preset <preset> --target ctd-keep-live-tests && ctest --test-dir <build dir> -C RelWithDebInfo
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/keep-live.c src/obs/keep-live-core.c)
 # Show Profiles (design: hub epics/show-profiles-design.md). The pure-logic files are shared with ctd-show-tests.
 set(
   CTD_SHOW_PURE_SOURCES
@@ -196,6 +218,14 @@ target_sources(
   PRIVATE ${CTD_SHOW_PURE_SOURCES} src/show/apply.c src/show/device-map.c src/show/show.c src/show/sync.c
 )
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/device-map-dialog.cpp src/ui/show-section.cpp)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/settings-section.cpp)
+# The CTD Producer dock: viewers per platform and one merged chat, from the CTD Relay client's snapshot.
+# producer-core.c is pure C (no libobs, no Qt) with its own tests:
+#   cmake --build --preset <preset> --target ctd-producer-tests && ctest --test-dir <build dir> -C RelWithDebInfo
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/producer-core.c src/ui/producer-dock.cpp)
+# The CTD Overlays dock: CTD Overlay's overlays, template updates and the template kit, through CTD Relay. overlay-
+# sources.cpp is shared with the CTD Relay dock; overlays-core.c is pure C with its own tests: test/overlays-dock
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/overlays-core.c src/ui/overlay-sources.cpp src/ui/overlays-dock.cpp)
 if(WIN32)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32 bcrypt)
 endif()
@@ -243,3 +273,5 @@ endif()
 #   cmake --build --preset <preset> --target ctd-show-tests && ctest --test-dir <build dir> -C RelWithDebInfo
 enable_testing()
 add_subdirectory(test/show)
+add_subdirectory(test/keep-live)
+add_subdirectory(test/producer)

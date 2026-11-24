@@ -32,7 +32,7 @@
 #define OVERLAYS_EVERY_NS (15 * NS_PER_S)
 #define HEARTBEAT_EVERY_NS (30 * NS_PER_S) /* the hub wants one at least every 60 s */
 #define OVERLAY_REPLY_TIMEOUT_NS (30 * NS_PER_S)
-#define CHAT_KEEP 200
+#define CHAT_KEEP 500 /* what GET /chat returns at most, and what the CTD Producer dock shows */
 #define ALERTS_KEEP 30
 #define EVENTS_IDLE_TIMEOUT_S 45 /* the server pings every 15 s */
 #define EVENT_TYPES \
@@ -88,6 +88,9 @@ static struct {
 	obs_data_array_t *profiles;
 	obs_data_t *status;
 	obs_data_array_t *overlays;
+	/* GET /profiles/{id}/overlay-summary items (docs/API.md §9.5): CTD Overlay's versions and template updates */
+	obs_data_array_t *overlay_summaries;
+	enum ms_summary overlay_summary_state;
 	obs_data_t *ingest;
 	uint64_t ingest_seq;
 	bool ingest_requested;
@@ -95,6 +98,9 @@ static struct {
 	uint64_t chat_seq;
 	obs_data_array_t *alerts;
 	uint64_t alerts_seq;
+	/* 403 on a read: the token lacks the scope (the person approving the pairing can untick it), until a new pairing */
+	bool chat_need_scope;   /* chat:read: GET /chat; the event stream leaves chat.* out without saying so */
+	bool status_need_scope; /* status:read: GET /profiles and GET /status */
 
 	/* the event stream */
 	char *last_event_id; /* the resume cursor; belongs to profile_id */
@@ -393,7 +399,7 @@ static void save_settings(void)
 	}
 	char *file = config_file();
 	if (file && !obs_data_save_json_safe(data, file, "tmp", "bak"))
-		blog(LOG_WARNING, "[ctd-live] couldn't save the CTD Relay settings");
+		blog(LOG_WARNING, "[CTD] relay: couldn't save the CTD Relay settings");
 	bfree(file);
 	obs_data_release(data);
 }
@@ -420,6 +426,8 @@ static void clear_profile_state(void)
 {
 	release_data(&ms.status);
 	release_array(&ms.overlays);
+	release_array(&ms.overlay_summaries);
+	ms.overlay_summary_state = MS_SUMMARY_UNKNOWN;
 	release_data(&ms.ingest);
 	release_array(&ms.chat);
 	release_array(&ms.alerts);
@@ -499,13 +507,13 @@ static void start_pairing(const char *base)
 		const long long expires = obs_data_get_int(reply, "expiresIn");
 		ms.pairing_expires_ns = os_gettime_ns() + (uint64_t)(expires > 0 ? expires : 600) * NS_PER_S;
 		struct dstr message = {0};
-		dstr_printf(&message, "Approve code %s in CTD Relay → Settings → API", ms.pairing_code);
+		dstr_printf(&message, obs_module_text("Relay.Status.ApproveCode"), ms.pairing_code);
 		set_link(MS_PAIRING, message.array);
 		dstr_free(&message);
-		blog(LOG_INFO, "[ctd-live] CTD Relay: pairing started, waiting for approval");
+		blog(LOG_INFO, "[CTD] relay: pairing started, waiting for approval");
 	} else {
 		struct dstr message = {0};
-		dstr_printf(&message, "Couldn't start pairing: %s", http_status_text(status));
+		dstr_printf(&message, obs_module_text("Relay.Status.PairingFailed"), http_status_text(status));
 		set_link(MS_ERROR, message.array);
 		dstr_free(&message);
 	}
@@ -536,20 +544,26 @@ static void poll_pairing(const char *base, const char *pairing_id, const char *p
 		if (ms.profile_locked)
 			set_string(&ms.profile_id, profile);
 		ms.token_refused = false;
-		ms.events_need_scope = false; /* a new token: it may carry obs:write */
+		ms.events_need_scope = false;                      /* a new token: it may carry obs:write */
+		ms.chat_need_scope = ms.status_need_scope = false; /* and chat:read / status:read */
 		ms.events_state = MS_EVENTS_IDLE;
 		clear_pairing();
 		clear_profile_state();
 		save_settings();
-		set_link(MS_CONNECTED, "Connected");
+		set_link(MS_CONNECTED, obs_module_text("Relay.Status.Connected"));
 		ms.refresh_requested = true;
-		blog(LOG_INFO, "[ctd-live] CTD Relay: connected");
+		blog(LOG_INFO, "[CTD] relay: connected");
 	} else if (status == HTTP_FORBIDDEN) {
 		clear_pairing();
-		set_link(MS_DISCONNECTED, "The connection was denied in CTD Relay");
+		set_link(MS_DISCONNECTED, obs_module_text("Relay.Status.Denied"));
+		/* pairing again (for a missing permission), refused: the connection it had still stands */
+		if (ms.token)
+			ms.refresh_requested = true;
 	} else if (status == HTTP_OTHER_4XX || status == HTTP_NOT_FOUND || os_gettime_ns() > ms.pairing_expires_ns) {
 		clear_pairing();
-		set_link(MS_DISCONNECTED, "The code expired: connect again");
+		set_link(MS_DISCONNECTED, obs_module_text("Relay.Status.Expired"));
+		if (ms.token)
+			ms.refresh_requested = true;
 	}
 	pthread_mutex_unlock(&ms.mutex);
 	obs_data_release(reply);
@@ -563,22 +577,40 @@ static void note_result(enum http_status status, const char *server)
 	pthread_mutex_lock(&ms.mutex);
 	if (status == HTTP_OK) {
 		/* also from the start-up "Connecting…", which is already MS_CONNECTED */
-		if (ms.link != MS_CONNECTED || !same(ms.message, "Connected"))
-			set_link(MS_CONNECTED, "Connected");
+		if (ms.link != MS_CONNECTED || !same(ms.message, obs_module_text("Relay.Status.Connected")))
+			set_link(MS_CONNECTED, obs_module_text("Relay.Status.Connected"));
 	} else if (status == HTTP_UNAUTHORIZED) {
 		if (!ms.token_refused)
-			blog(LOG_WARNING, "[ctd-live] CTD Relay refused the token");
+			blog(LOG_WARNING, "[CTD] relay: CTD Relay refused the token");
 		ms.token_refused = true;
-		set_link(MS_ERROR, "CTD Relay refused the token: connect again");
+		set_link(MS_ERROR, obs_module_text("Relay.Status.TokenRefused"));
 	} else if (status == HTTP_UNREACHABLE || status == HTTP_TLS_FAILED) {
 		struct dstr message = {0};
 		if (status == HTTP_TLS_FAILED)
-			dstr_printf(&message, "CTD Relay at %s: %s", server ? server : "", http_status_text(status));
+			dstr_printf(&message, obs_module_text("Relay.Status.TlsFailed"), server ? server : "",
+				    http_status_text(status));
 		else
-			dstr_printf(&message, "Can't reach CTD Relay at %s", server ? server : "");
+			dstr_printf(&message, obs_module_text("Relay.Status.Unreachable"), server ? server : "");
 		if (ms.link != MS_ERROR || !same(ms.message, message.array))
 			set_link(MS_ERROR, message.array);
 		dstr_free(&message);
+	}
+	pthread_mutex_unlock(&ms.mutex);
+}
+
+/* A read answered 403 or 200: the token lacks that read's scope, or has it. Anything else says nothing about it. */
+static void note_scope(bool *need_scope, enum http_status status, const char *scope)
+{
+	if (status != HTTP_FORBIDDEN && status != HTTP_OK)
+		return;
+	pthread_mutex_lock(&ms.mutex);
+	const bool need = status == HTTP_FORBIDDEN;
+	if (*need_scope != need) {
+		*need_scope = need;
+		ms.seq++;
+		if (need)
+			blog(LOG_WARNING, "[CTD] relay: this connection may not read this (%s); pair again to allow it",
+			     scope);
 	}
 	pthread_mutex_unlock(&ms.mutex);
 }
@@ -596,6 +628,7 @@ static void fetch_profiles(const char *base, const char *token, const char *serv
 	obs_data_t *reply = NULL;
 	const enum http_status status = get_json(base, "/profiles", token, &reply);
 	note_result(status, server);
+	note_scope(&ms.status_need_scope, status, "status:read");
 	if (status != HTTP_OK || !reply) {
 		obs_data_release(reply);
 		return;
@@ -633,6 +666,7 @@ static void fetch_status(const char *base, const char *token, const char *profil
 	const enum http_status status = get_json(base, path.array, token, &reply);
 	dstr_free(&path);
 	note_result(status, server);
+	note_scope(&ms.status_need_scope, status, "status:read");
 	pthread_mutex_lock(&ms.mutex);
 	if (status == HTTP_OK && same(ms.profile_id, profile)) {
 		release_data(&ms.status);
@@ -668,6 +702,39 @@ static void fetch_overlays(const char *base, const char *token, const char *prof
 	obs_data_release(reply);
 }
 
+/* CTD Overlay's versions and template updates, through CTD Relay (docs/API.md §9.5). An older CTD Relay answers 404:
+ * the dock then shows the overlays without version information. */
+static void fetch_overlay_summary(const char *base, const char *token, const char *profile)
+{
+	struct dstr path = {0};
+	dstr_printf(&path, "/profiles/%s/overlay-summary", profile);
+	obs_data_t *reply = NULL;
+	const enum http_status status = get_json(base, path.array, token, &reply);
+	dstr_free(&path);
+	obs_data_array_t *items = status == HTTP_OK && reply ? obs_data_get_array(reply, "items") : NULL;
+	pthread_mutex_lock(&ms.mutex);
+	if (same(ms.profile_id, profile)) {
+		enum ms_summary state = ms.overlay_summary_state;
+		if (status == HTTP_OK) {
+			release_array(&ms.overlay_summaries);
+			ms.overlay_summaries = items;
+			items = NULL;
+			state = MS_SUMMARY_OK;
+		} else if (status == HTTP_NOT_FOUND) {
+			release_array(&ms.overlay_summaries);
+			state = MS_SUMMARY_UNSUPPORTED;
+		} else if (status == HTTP_FORBIDDEN) {
+			release_array(&ms.overlay_summaries);
+			state = MS_SUMMARY_NEED_SCOPE;
+		}
+		ms.overlay_summary_state = state;
+		ms.seq++;
+	}
+	pthread_mutex_unlock(&ms.mutex);
+	obs_data_array_release(items);
+	obs_data_release(reply);
+}
+
 static void fetch_ingest(const char *base, const char *token, const char *profile)
 {
 	struct dstr path = {0};
@@ -681,7 +748,7 @@ static void fetch_ingest(const char *base, const char *token, const char *profil
 		ms.ingest = reply;
 		reply = NULL;
 	} else if (status == HTTP_FORBIDDEN) {
-		set_string(&ms.message, "This connection may not read stream keys (it needs the ingest:read scope)");
+		set_string(&ms.message, obs_module_text("Relay.Status.NoIngestScope"));
 	}
 	ms.ingest_seq++;
 	ms.seq++;
@@ -697,6 +764,7 @@ static void fetch_chat(const char *base, const char *token, const char *profile)
 	obs_data_t *reply = NULL;
 	const enum http_status status = get_json(base, path.array, token, &reply);
 	dstr_free(&path);
+	note_scope(&ms.chat_need_scope, status, "chat:read");
 	if (status != HTTP_OK || !reply) {
 		obs_data_release(reply);
 		return;
@@ -775,7 +843,7 @@ static bool fetch_clock(const char *base, const char *token, const char *profile
 		ms.clock_fps = fps > 0 && fps <= 240 ? fps : 30;
 		ms.clock_utc_offset_min = (int)obs_data_get_int(reply, "utcOffsetMinutes");
 		if (!ms.clock_valid)
-			blog(LOG_INFO, "[ctd-live] CTD Relay: clock synced (round trip %.1f ms)", delay);
+			blog(LOG_INFO, "[CTD] relay: clock synced (round trip %.1f ms)", delay);
 		ms.clock_valid = true;
 		ms.seq++;
 	}
@@ -811,8 +879,8 @@ static bool heartbeat(const char *base, const char *token)
 	if (!ms.app_id_renewed) {
 		renew_app_id();
 		ms.events_register = true; /* register under it at the next round */
-		blog(LOG_INFO, "[ctd-live] CTD Relay: \"%s\" belongs to an earlier connection; registering as \"%s\"",
-		     id, ms.app_id);
+		blog(LOG_INFO, "[CTD] relay: \"%s\" belongs to an earlier connection; registering as \"%s\"", id,
+		     ms.app_id);
 	}
 	pthread_mutex_unlock(&ms.mutex);
 	return false;
@@ -831,8 +899,7 @@ static uint64_t send_obs_websocket(const char *base, const char *token, const ch
 	obsws_config_read(&ws);
 	if (share && !ws.found) {
 		pthread_mutex_lock(&ms.mutex);
-		set_string(&ms.obsws_message,
-			   "OBS's WebSocket settings weren't found (obs-websocket, OBS 28 or later)");
+		set_string(&ms.obsws_message, obs_module_text("Relay.Share.NotFound"));
 		ms.seq++;
 		pthread_mutex_unlock(&ms.mutex);
 		obsws_config_free(&ws);
@@ -889,23 +956,23 @@ static uint64_t send_obs_websocket(const char *base, const char *token, const ch
 	if (passing || (share && status == HTTP_OK))
 		ms.obsws_on_relay = true;
 	if (status == HTTP_OK && share) {
-		dstr_printf(&message, "Shared with CTD Relay: OBS at %s:%lld%s", obs_data_get_string(reply, "host"),
-			    obs_data_get_int(reply, "port"), ws.enabled ? "" : " (OBS's WebSocket server is off)");
+		dstr_printf(&message,
+			    obs_module_text(ws.enabled ? "Relay.Share.Shared" : "Relay.Share.SharedServerOff"),
+			    obs_data_get_string(reply, "host"), obs_data_get_int(reply, "port"));
 	} else if (!share && !passing) {
 		dstr_copy(&message,
-			  status == HTTP_OK ? "Not shared: CTD Relay was told to forget OBS's password" : "Not shared");
+			  obs_module_text(status == HTTP_OK ? "Relay.Share.Forgotten" : "Relay.Share.NotShared"));
 		ms.obsws_sent = 0;
 		ms.obsws_on_relay = false;
 	} else if (!share) {
-		dstr_printf(&message, "Couldn't tell CTD Relay to forget OBS's password (%s); trying again",
-			    http_status_text(status));
+		dstr_printf(&message, obs_module_text("Relay.Share.ForgetFailed"), http_status_text(status));
 	} else if (status == HTTP_NOT_FOUND) {
 		/* not registered (the next registration sends this again), or a CTD Relay before v1.6 */
-		dstr_copy(&message, "Waiting for CTD Relay (it needs API v1.6 for this)");
+		dstr_copy(&message, obs_module_text("Relay.Share.Waiting"));
 	} else if (status == HTTP_FORBIDDEN) {
-		dstr_copy(&message, "This connection may not do this (obs:write): disconnect and connect again");
+		dstr_copy(&message, obs_module_text("Relay.Share.NoScope"));
 	} else {
-		dstr_printf(&message, "Couldn't share with CTD Relay (%s); trying again", http_status_text(status));
+		dstr_printf(&message, obs_module_text("Relay.Share.Failed"), http_status_text(status));
 	}
 	if (ms.obsws_on_relay != was_on_relay)
 		save_settings();
@@ -955,8 +1022,7 @@ static void queue_release(void)
 		}
 	}
 	if (ms.release_count == MAX_RELEASES) {
-		blog(LOG_WARNING,
-		     "[ctd-live] CTD Relay: too many old connections never answered; forgetting the oldest");
+		blog(LOG_WARNING, "[CTD] relay: too many old connections never answered; forgetting the oldest");
 		drop_release(0);
 	}
 	char id[48];
@@ -1021,7 +1087,7 @@ static bool release_app(void)
 		if (answered || expired) {
 			if (expired)
 				blog(LOG_WARNING,
-				     "[ctd-live] CTD Relay at %s never answered in three days; it may still list this OBS",
+				     "[CTD] relay: CTD Relay at %s never answered in three days; it may still list this OBS",
 				     r.base);
 			drop_release(i);
 			save_settings();
@@ -1098,13 +1164,13 @@ static uint64_t send_events(const char *base, const char *token, const char *pro
 		ms.events_sent += reply ? obs_data_get_int(reply, "accepted") : 0;
 		ms.events_state = MS_EVENTS_OK;
 		if (before != MS_EVENTS_OK)
-			blog(LOG_INFO, "[ctd-live] CTD Relay: sending OBS events");
+			blog(LOG_INFO, "[CTD] relay: sending OBS events");
 	} else if (status == HTTP_FORBIDDEN) {
 		/* the token predates obs:write: stop until the user pairs again */
 		ms.events_need_scope = true;
 		ms.events_state = MS_EVENTS_NEED_SCOPE;
 		release_array(&ms.events);
-		blog(LOG_WARNING, "[ctd-live] CTD Relay: this connection may not send OBS events (obs:write); "
+		blog(LOG_WARNING, "[CTD] relay: this connection may not send OBS events (obs:write); "
 				  "pair again to send them");
 	} else if (status == HTTP_BAD_REQUEST || status == HTTP_BAD_RESPONSE) {
 		ms.events_state = MS_EVENTS_FAILING; /* this batch can't be fixed by sending it again */
@@ -1115,7 +1181,7 @@ static uint64_t send_events(const char *base, const char *token, const char *pro
 		release_array(&ms.events);
 		wait = EVENTS_UNSUPPORTED_NS;
 		if (before != MS_EVENTS_UNSUPPORTED)
-			blog(LOG_INFO, "[ctd-live] CTD Relay doesn't take OBS events yet (it needs API v1.4); "
+			blog(LOG_INFO, "[CTD] relay: CTD Relay doesn't take OBS events yet (it needs API v1.4); "
 				       "asking again every 5 minutes");
 	} else {
 		/* not registered yet (404), registered by an earlier pairing (409), rate limited, or the hub is down: the
@@ -1132,7 +1198,7 @@ static uint64_t send_events(const char *base, const char *token, const char *pro
 		requeue_events(batch);
 		ms.events_state = MS_EVENTS_FAILING;
 		if (before != MS_EVENTS_FAILING)
-			blog(LOG_INFO, "[ctd-live] CTD Relay: couldn't send OBS events (%s); retrying",
+			blog(LOG_INFO, "[CTD] relay: couldn't send OBS events (%s); retrying",
 			     http_status_text(status));
 	}
 	if (status != HTTP_NOT_FOUND)
@@ -1174,8 +1240,8 @@ static void send_overlay_request(const char *base, const char *token, const char
 	if (status != HTTP_OK || !to) {
 		pthread_mutex_lock(&ms.mutex);
 		set_overlay_request(MS_OVERLAY_FAILED,
-				    status == HTTP_OK ? "CTD Overlay isn't connected to this profile on the hub"
-						      : "Couldn't look up CTD Overlay on the hub");
+				    obs_module_text(status == HTTP_OK ? "Relay.Request.NotConnected"
+								      : "Relay.Request.LookupFailed"));
 		pthread_mutex_unlock(&ms.mutex);
 		bfree(to);
 		return;
@@ -1200,12 +1266,12 @@ static void send_overlay_request(const char *base, const char *token, const char
 	if (status == HTTP_OK && reply && *obs_data_get_string(reply, "id")) {
 		set_string(&ms.overlay_message_id, obs_data_get_string(reply, "id"));
 		ms.overlay_deadline_ns = os_gettime_ns() + OVERLAY_REPLY_TIMEOUT_NS;
-		set_overlay_request(MS_OVERLAY_WAITING, "Asked CTD Overlay; waiting for its overlay…");
-		blog(LOG_INFO, "[ctd-live] CTD Relay: asked %s for a '%s' overlay (%s)", to, template_id, canvas);
+		set_overlay_request(MS_OVERLAY_WAITING, obs_module_text("Relay.Request.Waiting"));
+		blog(LOG_INFO, "[CTD] relay: asked %s for a '%s' overlay (%s)", to, template_id, canvas);
 	} else {
 		struct dstr text = {0};
-		dstr_printf(&text, "Couldn't send the request to CTD Overlay: %s",
-			    status == HTTP_FORBIDDEN ? "this connection may not message other apps (apps:write)"
+		dstr_printf(&text, obs_module_text("Relay.Request.SendFailed"),
+			    status == HTTP_FORBIDDEN ? obs_module_text("Relay.Request.NoAppsWrite")
 						     : http_status_text(status));
 		set_overlay_request(MS_OVERLAY_FAILED, text.array);
 		dstr_free(&text);
@@ -1348,14 +1414,18 @@ static void handle_app_message(obs_data_t *message)
 		ms.overlay_created = resource;
 		resource = NULL;
 		struct dstr text = {0};
-		dstr_printf(&text, "CTD Overlay made \"%s\"", obs_data_get_string(ms.overlay_created, "name"));
+		dstr_printf(&text, obs_module_text("Relay.Request.Made"),
+			    obs_data_get_string(ms.overlay_created, "name"));
 		set_overlay_request(MS_OVERLAY_DONE, text.array);
 		dstr_free(&text);
 		ms.overlays_dirty = true;
 	} else {
 		const char *why = reply ? obs_data_get_string(reply, "error") : "";
 		struct dstr text = {0};
-		dstr_printf(&text, "CTD Overlay couldn't make it%s%s", *why ? ": " : "", why);
+		if (*why)
+			dstr_printf(&text, obs_module_text("Relay.Request.FailedWhy"), why);
+		else
+			dstr_copy(&text, obs_module_text("Relay.Request.Failed"));
 		set_overlay_request(MS_OVERLAY_FAILED, text.array);
 		dstr_free(&text);
 	}
@@ -1392,22 +1462,24 @@ static void handle_event(const char *type, obs_data_t *envelope)
 	} else if (strcmp(type, "destination.down") == 0) {
 		/* H25: "Instagram went down, recovering: Instagram ended the live (copyright)…" */
 		struct dstr text = {0};
-		dstr_printf(&text, "%s went down", obs_data_get_string(data, "name"));
+		dstr_printf(&text, obs_module_text("Relay.Alert.Down"), obs_data_get_string(data, "name"));
 		if (*obs_data_get_string(data, "phase"))
 			dstr_catf(&text, ", %s", obs_data_get_string(data, "phase"));
 		if (*obs_data_get_string(data, "reason"))
 			dstr_catf(&text, ": %s", obs_data_get_string(data, "reason"));
 		add_alert("down", text.array);
-		blog(LOG_WARNING, "[ctd-live] CTD Relay: %s", text.array);
+		blog(LOG_WARNING, "[CTD] relay: %s", text.array);
 		dstr_free(&text);
 	} else if (strcmp(type, "destination.up") == 0) {
 		struct dstr text = {0};
-		dstr_printf(&text, "%s is back", obs_data_get_string(data, "name"));
 		const long long down_for = obs_data_get_int(data, "downForSec");
 		if (down_for > 0)
-			dstr_catf(&text, " after %lld s", down_for);
+			dstr_printf(&text, obs_module_text("Relay.Alert.BackAfter"), obs_data_get_string(data, "name"),
+				    down_for);
+		else
+			dstr_printf(&text, obs_module_text("Relay.Alert.Back"), obs_data_get_string(data, "name"));
 		add_alert("up", text.array);
-		blog(LOG_INFO, "[ctd-live] CTD Relay: %s", text.array);
+		blog(LOG_INFO, "[CTD] relay: %s", text.array);
 		dstr_free(&text);
 	} else if (strcmp(type, "system.notice") == 0) {
 		add_alert("notice", obs_data_get_string(data, "message"));
@@ -1460,6 +1532,8 @@ static void dispatch_event(const char *id, const char *event, const char *data, 
 	obs_data_release(envelope);
 }
 
+#define SSE_DATA_MAX (1024 * 1024) /* one event's data, at most (a line is cut at 256 KB) */
+
 struct sse_parser {
 	struct dstr line;
 	struct dstr data;
@@ -1492,6 +1566,9 @@ static void sse_line(struct sse_parser *p, const char *profile)
 		value = "";
 	}
 	if (strcmp(field, "data") == 0) {
+		/* one event's data is capped like a line (a server that never sends the blank line can't grow it) */
+		if (p->data.len >= SSE_DATA_MAX)
+			return;
 		if (p->data.len)
 			dstr_cat_ch(&p->data, '\n');
 		dstr_cat(&p->data, value);
@@ -1536,7 +1613,7 @@ static void *ms_events_thread(void *unused)
 				ms.seq++;
 				pthread_mutex_unlock(&ms.mutex);
 				os_event_signal(ms.wake);
-				blog(LOG_INFO, "[ctd-live] CTD Relay: event stream open%s", cursor ? " (resumed)" : "");
+				blog(LOG_INFO, "[CTD] relay: event stream open%s", cursor ? " (resumed)" : "");
 
 				struct sse_parser parser = {0};
 				unsigned char buffer[8192];
@@ -1625,7 +1702,7 @@ static void *ms_thread(void *unused)
 		ms.profiles_dirty = ms.overlays_dirty = ms.ingest_requested = ms.overlay_send = false;
 		ms.library_dirty = false;
 		if (ms.overlay_request == MS_OVERLAY_WAITING && os_gettime_ns() > ms.overlay_deadline_ns)
-			set_overlay_request(MS_OVERLAY_FAILED, "CTD Overlay didn't answer");
+			set_overlay_request(MS_OVERLAY_FAILED, obs_module_text("Relay.Request.NoAnswer"));
 		pthread_mutex_unlock(&ms.mutex);
 
 		const uint64_t now = os_gettime_ns();
@@ -1659,6 +1736,7 @@ static void *ms_thread(void *unused)
 					fetch_chat(base, token, profile);
 				if (overlays_dirty || now >= next_overlays) {
 					fetch_overlays(base, token, profile);
+					fetch_overlay_summary(base, token, profile);
 					next_overlays = now + OVERLAYS_EVERY_NS;
 				}
 				if (ingest)
@@ -1752,7 +1830,7 @@ static void *ms_thread(void *unused)
 			}
 		} else if (overlay_send) {
 			pthread_mutex_lock(&ms.mutex);
-			set_overlay_request(MS_OVERLAY_FAILED, "Connect to CTD Relay first");
+			set_overlay_request(MS_OVERLAY_FAILED, obs_module_text("Relay.Request.ConnectFirst"));
 			pthread_mutex_unlock(&ms.mutex);
 		}
 
@@ -1782,7 +1860,7 @@ void ms_init(void)
 	os_atomic_set_bool(&ms.alive, true);
 	load_settings(); /* no default server: nothing is contacted until the user types one */
 	ms.link = ms.token ? MS_CONNECTED : MS_DISCONNECTED;
-	set_string(&ms.message, ms.token ? "Connecting…" : "Not connected");
+	set_string(&ms.message, obs_module_text(ms.token ? "Relay.Status.Connecting" : "Relay.Status.NotConnected"));
 	ms.refresh_requested = true;
 	ms.events_boot_ms = epoch_ms();
 	library_mirror_init();
@@ -1812,6 +1890,7 @@ void ms_shutdown(void)
 	release_array(&ms.profiles);
 	release_data(&ms.status);
 	release_array(&ms.overlays);
+	release_array(&ms.overlay_summaries);
 	release_data(&ms.ingest);
 	release_array(&ms.chat);
 	release_array(&ms.alerts);
@@ -1857,6 +1936,9 @@ void ms_snapshot_get(struct ms_snapshot *out)
 	obs_data_addref(out->status);
 	out->overlays = ms.overlays;
 	obs_data_array_addref(out->overlays);
+	out->overlay_summaries = ms.overlay_summaries;
+	obs_data_array_addref(out->overlay_summaries);
+	out->overlay_summary_state = ms.overlay_summary_state;
 	out->ingest = ms.ingest;
 	obs_data_addref(out->ingest);
 	out->ingest_seq = ms.ingest_seq;
@@ -1866,6 +1948,8 @@ void ms_snapshot_get(struct ms_snapshot *out)
 	out->alerts = ms.alerts;
 	obs_data_array_addref(out->alerts);
 	out->alerts_seq = ms.alerts_seq;
+	out->chat_need_scope = ms.chat_need_scope;
+	out->status_need_scope = ms.status_need_scope;
 	out->overlay_request = ms.overlay_request;
 	out->overlay_message = copy_or_empty(ms.overlay_message);
 	out->overlay_created = ms.overlay_created;
@@ -1913,6 +1997,7 @@ void ms_snapshot_free(struct ms_snapshot *snapshot)
 	obs_data_array_release(snapshot->profiles);
 	obs_data_release(snapshot->status);
 	obs_data_array_release(snapshot->overlays);
+	obs_data_array_release(snapshot->overlay_summaries);
 	obs_data_release(snapshot->ingest);
 	obs_data_array_release(snapshot->chat);
 	obs_data_array_release(snapshot->alerts);
@@ -1947,7 +2032,7 @@ void ms_set_server(const char *server)
 	release_array(&ms.profiles);
 	clear_profile_state();
 	save_settings();
-	set_link(MS_DISCONNECTED, "Not connected");
+	set_link(MS_DISCONNECTED, obs_module_text("Relay.Status.NotConnected"));
 	ms.reset_requested = true;
 	pthread_mutex_unlock(&ms.mutex);
 	os_event_signal(ms.wake);
@@ -1960,7 +2045,7 @@ void ms_start_pairing(void)
 	pthread_mutex_lock(&ms.mutex);
 	clear_pairing();
 	ms.pairing_requested = true;
-	set_link(MS_PAIRING, "Asking CTD Relay for a code…");
+	set_link(MS_PAIRING, obs_module_text("Relay.Status.AskingCode"));
 	pthread_mutex_unlock(&ms.mutex);
 	os_event_signal(ms.wake);
 }
@@ -1984,7 +2069,7 @@ void ms_disconnect(void)
 	release_array(&ms.profiles);
 	clear_profile_state();
 	save_settings();
-	set_link(MS_DISCONNECTED, "Not connected");
+	set_link(MS_DISCONNECTED, obs_module_text("Relay.Status.NotConnected"));
 	pthread_mutex_unlock(&ms.mutex);
 	os_event_signal(ms.wake);
 }
@@ -2002,11 +2087,11 @@ void ms_set_share_obs_websocket(bool on)
 	if (!on)
 		ms.obsws_on_relay = true; /* owed until the hub answers the revoke, even if OBS closes first */
 	ms.obsws_dirty = true;
-	set_string(&ms.obsws_message, on ? "Sharing with CTD Relay…" : "Telling CTD Relay to forget OBS's password…");
+	set_string(&ms.obsws_message, obs_module_text(on ? "Relay.Share.Sharing" : "Relay.Share.Forgetting"));
 	save_settings();
 	ms.seq++;
 	pthread_mutex_unlock(&ms.mutex);
-	blog(LOG_INFO, "[ctd-live] CTD Relay: OBS's WebSocket settings %s", on ? "shared" : "no longer shared");
+	blog(LOG_INFO, "[CTD] relay: OBS's WebSocket settings %s", on ? "shared" : "no longer shared");
 	os_event_signal(ms.wake);
 }
 
@@ -2047,7 +2132,7 @@ void ms_request_overlay(const char *template_id, const char *canvas)
 	set_string(&ms.overlay_message_id, NULL);
 	release_data(&ms.overlay_created);
 	ms.overlay_send = true;
-	set_overlay_request(MS_OVERLAY_SENDING, "Looking for CTD Overlay on the hub…");
+	set_overlay_request(MS_OVERLAY_SENDING, obs_module_text("Relay.Request.Looking"));
 	pthread_mutex_unlock(&ms.mutex);
 	os_event_signal(ms.wake);
 }

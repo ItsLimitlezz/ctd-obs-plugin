@@ -9,6 +9,8 @@
 #include "brand.hpp"
 #include "../show/device-map.h"
 
+#include <obs-module.h>
+
 #include <QComboBox>
 #include <QDialog>
 #include <QFrame>
@@ -22,6 +24,12 @@
 #include <QVBoxLayout>
 
 namespace {
+
+/* user-visible text, from data/locale */
+QString uiText(const char *key)
+{
+	return QString::fromUtf8(obs_module_text(key));
+}
 
 QString qs(const char *value)
 {
@@ -46,7 +54,7 @@ public:
 	DeviceMapDialog(const QString &showId, QWidget *parent) : QDialog(parent), showId_(showId)
 	{
 		setAttribute(Qt::WA_DeleteOnClose);
-		setWindowTitle("Devices");
+		setWindowTitle(uiText("DeviceMap.Title"));
 		ctd::applyTheme(this);
 		setMinimumSize(300, 240);
 		resize(460, 420);
@@ -58,8 +66,7 @@ public:
 		title_->setWordWrap(true);
 		outer->addWidget(title_);
 
-		auto *intro = new QLabel(
-			"Pick which of this machine's devices each source uses. Saved for this machine only.", this);
+		auto *intro = new QLabel(uiText("DeviceMap.Intro"), this);
 		intro->setWordWrap(true);
 		intro->setProperty("ctdRole", "muted");
 		outer->addWidget(intro);
@@ -78,8 +85,8 @@ public:
 		outer->addWidget(status_);
 
 		auto *buttons = new QHBoxLayout();
-		auto *refresh = new QPushButton("Refresh", this);
-		auto *close = new QPushButton("Close", this);
+		auto *refresh = new QPushButton(uiText("DeviceMap.Refresh"), this);
+		auto *close = new QPushButton(uiText("DeviceMap.Close"), this);
 		ctd::button(refresh);
 		ctd::button(close);
 		buttons->addWidget(refresh);
@@ -106,13 +113,13 @@ public:
 		list->setSpacing(8);
 
 		if (!show_devices_get(showId_.toUtf8().constData(), &rows.data)) {
-			title_->setText("Devices");
-			auto *none = new QLabel("This show profile isn't active, or it has no devices to map.", body);
+			title_->setText(uiText("DeviceMap.Title"));
+			auto *none = new QLabel(uiText("DeviceMap.None"), body);
 			none->setWordWrap(true);
 			list->addWidget(none);
 		} else {
 			rows.valid = true;
-			title_->setText(QString::fromUtf8("Devices \xE2\x80\x94 %1").arg(qs(rows.data.profile_name)));
+			title_->setText(uiText("DeviceMap.TitleFor").arg(qs(rows.data.profile_name)));
 			setWindowTitle(title_->text());
 			for (size_t i = 0; i < rows.data.count; i++)
 				list->addWidget(makeRow(rows.data.rows[i], body));
@@ -135,10 +142,7 @@ private:
 	QWidget *makeRow(const show_device_row &row, QWidget *parent)
 	{
 		auto *card = new QFrame(parent);
-		card->setObjectName("ctdDeviceCard");
-		card->setStyleSheet(
-			QString("#ctdDeviceCard { background: %1; border: 1px solid %2; border-radius: 4px; }")
-				.arg(ctd::surface().name(), ctd::line().name()));
+		card->setObjectName("ctdDeviceCard"); /* styled by #ctdRoot QFrame#ctdDeviceCard (theme or brand.hpp) */
 		auto *v = new QVBoxLayout(card);
 		v->setContentsMargins(10, 8, 10, 8);
 		v->setSpacing(4);
@@ -148,14 +152,14 @@ private:
 		if (gone)
 			name = qs(row.label);
 		if (gone)
-			name += " (source deleted)";
+			name += " " + uiText("DeviceMap.SourceDeleted");
 		auto *nameLabel = new QLabel(name, card);
 		nameLabel->setFont(ctd::font(ctd::Face::Mono, 12, QFont::Bold));
 		nameLabel->setWordWrap(true);
 		v->addWidget(nameLabel);
 
 		if (*row.was) {
-			auto *was = new QLabel("Was: " + qs(row.was), card);
+			auto *was = new QLabel(uiText("DeviceMap.Was").arg(qs(row.was)), card);
 			was->setWordWrap(true);
 			was->setProperty("ctdRole", "muted");
 			was->setFont(ctd::font(ctd::Face::Mono, 11));
@@ -166,15 +170,15 @@ private:
 		chip->setFont(ctd::font(ctd::Face::Mono, 10, QFont::Bold));
 		const QString status = qs(row.status);
 		if (row.remembered_missing)
-			styleChip(chip, QString::fromUtf8("\xE2\x9C\x97 remembered device unplugged"), ctd::tallyRed());
+			styleChip(chip, uiText("DeviceMap.Chip.Unplugged"), ctd::tallyRed());
 		else if (status == "auto")
-			styleChip(chip, QString::fromUtf8("\xE2\x9C\x93 auto"), ctd::cyan());
+			styleChip(chip, uiText("DeviceMap.Chip.Auto"), ctd::cyan());
 		else if (status == "remembered")
-			styleChip(chip, QString::fromUtf8("\xE2\x9C\x93 remembered"), ctd::cyan());
+			styleChip(chip, uiText("DeviceMap.Chip.Remembered"), ctd::cyan());
 		else if (status == "suggested")
-			styleChip(chip, "? suggested", amber());
+			styleChip(chip, uiText("DeviceMap.Chip.Suggested"), amber());
 		else
-			styleChip(chip, QString::fromUtf8("\xE2\x9C\x97 missing"), ctd::tallyRed());
+			styleChip(chip, uiText("DeviceMap.Chip.Missing"), ctd::tallyRed());
 		chip->setWordWrap(true);
 		chip->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Minimum);
 		v->addWidget(chip, 0, Qt::AlignLeft);
@@ -183,7 +187,7 @@ private:
 		combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
 		combo->setMinimumContentsLength(12);
 		combo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-		combo->addItem(QString::fromUtf8("\xE2\x80\x94 No device \xE2\x80\x94"), QString());
+		combo->addItem(uiText("DeviceMap.NoDevice"), QString());
 		const QString currentId = qs(row.current_id);
 		int select = currentId.isEmpty() ? 0 : -1;
 		for (size_t i = 0; i < row.option_count; i++) {
@@ -197,7 +201,7 @@ private:
 			QString shown = qs(row.current_name);
 			if (shown.isEmpty())
 				shown = currentId;
-			combo->addItem(shown + " (not connected)", currentId);
+			combo->addItem(shown + " " + uiText("DeviceMap.NotConnected"), currentId);
 			select = combo->count() - 1;
 			if (auto *model = qobject_cast<QStandardItemModel *>(combo->model()))
 				model->item(select)->setEnabled(false);
@@ -217,11 +221,11 @@ private:
 							    err, sizeof(err));
 			if (ok) {
 				if (chipPtr)
-					styleChip(chipPtr, QString::fromUtf8("\xE2\x9C\x93 Set"), ctd::cyan());
+					styleChip(chipPtr, uiText("DeviceMap.Chip.Set"), ctd::cyan());
 				combo->setToolTip(combo->currentText());
 				setStatus(QString(), false);
 			} else {
-				setStatus(QString::fromUtf8(err[0] ? err : "Couldn't change the device."), true);
+				setStatus(err[0] ? QString::fromUtf8(err) : uiText("DeviceMap.ChangeFailed"), true);
 			}
 		});
 		return card;

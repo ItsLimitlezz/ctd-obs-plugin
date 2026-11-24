@@ -190,11 +190,21 @@ static void progress_cb(void *opaque, uint64_t done, uint64_t total)
 	unlock();
 }
 
+/* sync-flow.c (pure C, no libobs) names its steps in English; the dock shows them in the user's language */
+static const char *step_text(const char *step)
+{
+	if (step && strcmp(step, "Uploading") == 0)
+		return obs_module_text("Show.Sync.Uploading");
+	if (step && strcmp(step, "Downloading") == 0)
+		return obs_module_text("Show.Sync.Downloading");
+	return step;
+}
+
 static void step_cb(void *opaque, const char *step, uint64_t done, uint64_t total)
 {
 	(void)opaque;
 	lock();
-	set_str(&sy.step, step);
+	set_str(&sy.step, step_text(step));
 	sy.done = done;
 	sy.total = total;
 	sy.seq++;
@@ -382,11 +392,16 @@ struct after_job {
 static void after_job_ui(void *param)
 {
 	struct after_job *a = param;
+	/* The worker is joined before the show goes idle: while it is busy no other job can start, so this joins the
+	 * job that queued it, never a newer one (that could be a long export, or a switch waiting on this thread). */
 	show_join_worker();
+	show_set_busy(SHOW_IDLE);
 	sy.job_running = false;
 	if (a->update_ready && a->id[0])
 		cj_set_bool(sy.update_ready, a->id, true);
-	if (a->job->kind == JOB_PULL && !a->ok && a->job->automatic && a->job->relay[0])
+	/* An automatic pull waits a while whatever its outcome: one that found nothing new for a profile that still
+	 * looks stale (two local profiles linked to the same Relay profile) would otherwise start again at once */
+	if (a->job->kind == JOB_PULL && a->job->automatic && a->job->relay[0])
 		cj_set_int(sy.pull_backoff, a->job->relay, now_s() + PULL_BACKOFF_S);
 	if (a->job->switch_after && a->ok && a->id[0])
 		show_switch(a->id, 0);
@@ -400,57 +415,41 @@ static void message_for(const struct job *job, const struct show_sync_outcome *o
 {
 	if (job->kind == JOB_SAVE_UP || (job->kind == JOB_RESOLVE && job->choice == SHOW_CONFLICT_KEEP_MINE)) {
 		if (ok && out->no_changes)
-			show_set_message(false, "%s is already on CTD Relay (revision %lld).", job->name,
+			show_set_message(false, obs_module_text("Show.Sync.AlreadyOnRelay"), job->name,
 					 (long long)out->revision);
 		else if (ok && out->secrets_local)
-			show_set_message(false,
-					 "Saved %s to CTD Relay as revision %lld (%d value(s) stay on this machine).",
-					 job->name, (long long)out->revision, out->secrets_local);
+			show_set_message(false, obs_module_text("Show.Sync.SavedSecretsLocal"), job->name,
+					 (long long)out->revision, out->secrets_local);
 		else if (ok)
-			show_set_message(false, "Saved %s to CTD Relay as revision %lld.", job->name,
+			show_set_message(false, obs_module_text("Show.Sync.Saved"), job->name,
 					 (long long)out->revision);
 		else if (out->conflict)
-			show_set_message(true, "%s Choose which version to keep.", out->error);
+			show_set_message(true, obs_module_text("Show.Sync.Conflict"), out->error);
 		else if (out->result == SHOW_RELAY_OFFLINE)
-			show_set_message(
-				true,
-				"CTD Relay can't be reached: %s stays on this machine and is saved up when Relay is "
-				"back.",
-				job->name);
+			show_set_message(true, obs_module_text("Show.Sync.Offline"), job->name);
 		else if (out->result == SHOW_RELAY_DENIED)
-			show_set_message(true,
-					 "CTD Relay refused: pair this machine again so it gets Show Profiles access "
-					 "(show:read, show:write).");
+			show_set_message(true, "%s", obs_module_text("Show.Sync.DeniedSaveUp"));
 		else
 			show_set_message(true, "%s", out->error);
 		return;
 	}
 	if (!ok) {
 		if (out->result == SHOW_RELAY_DENIED)
-			show_set_message(true,
-					 "CTD Relay refused: pair this machine again so it gets Show Profiles access.");
+			show_set_message(true, "%s", obs_module_text("Show.Sync.Denied"));
 		else if (!job->automatic || out->result != SHOW_RELAY_OFFLINE)
 			show_set_message(true, "%s", out->error);
 		return;
 	}
 	if (job->kind == JOB_RESOLVE && job->choice == SHOW_CONFLICT_SAVE_AS_NEW)
-		show_set_message(
-			false,
-			"Kept your version as a new local show profile; %s now has revision %lld from CTD Relay.",
-			job->name, (long long)out->revision);
+		show_set_message(false, obs_module_text("Show.Sync.SavedAsNew"), job->name, (long long)out->revision);
 	else if (job->kind == JOB_RESOLVE)
-		show_set_message(
-			false,
-			"%s now has revision %lld from CTD Relay; your version is kept as an older local revision.",
-			job->name, (long long)out->revision);
+		show_set_message(false, obs_module_text("Show.Sync.TookTheirs"), job->name, (long long)out->revision);
 	else if (out->no_changes)
-		show_set_message(false, "This machine already has revision %lld.", (long long)out->revision);
+		show_set_message(false, obs_module_text("Show.Sync.AlreadyHave"), (long long)out->revision);
 	else if (job->switch_after)
-		show_set_message(false, "Downloaded revision %lld; switching…", (long long)out->revision);
+		show_set_message(false, obs_module_text("Show.Sync.DownloadedSwitching"), (long long)out->revision);
 	else
-		show_set_message(false,
-				 "Downloaded revision %lld from CTD Relay: switch to it to apply it (Update ready).",
-				 (long long)out->revision);
+		show_set_message(false, obs_module_text("Show.Sync.Downloaded"), (long long)out->revision);
 }
 
 static void *job_thread(void *param)
@@ -465,10 +464,19 @@ static void *job_thread(void *param)
 	switch (job->kind) {
 	case JOB_SAVE_UP:
 		ok = show_flow_save_up(&ops, job->id, job->relay[0] ? job->relay : NULL, -1, job->scratch, NULL, &out);
-		if (ok || out.conflict || out.result == SHOW_RELAY_DENIED)
+		switch (show_save_up_queue_action(ok, out.conflict, out.result,
+						  job->automatic || show_sync_queue_has(job->id))) {
+		case SHOW_SAVE_UP_QUEUE_REMOVE:
 			show_sync_queue_remove(job->id);
-		else if (out.result == SHOW_RELAY_OFFLINE)
+			break;
+		case SHOW_SAVE_UP_QUEUE_RETRY:
+			/* every failed attempt of a queued save-up moves its next try back (15 s … 600 s); before, only
+			 * "offline" did, so any other failure left it due and it ran again back to back */
 			show_sync_queue_add(job->id, now_s(), out.error);
+			break;
+		case SHOW_SAVE_UP_QUEUE_KEEP:
+			break;
+		}
 		if (out.conflict)
 			set_conflict(job, out.head);
 		break;
@@ -505,7 +513,7 @@ static void *job_thread(void *param)
 	sy.seq++;
 	unlock();
 	show_reload_entries();
-	show_set_busy(SHOW_IDLE);
+	/* still busy: after_job_ui joins this thread, then sets the show idle */
 	obs_queue_task(OBS_TASK_UI, after_job_ui, a, false);
 	return NULL;
 }
@@ -515,7 +523,7 @@ static bool start_job(struct job *job)
 {
 	char *base = NULL, *token = NULL, *profile = NULL;
 	if (!ms_show_access(&base, &token, &profile)) {
-		show_set_message(true, "Connect the dock to CTD Relay first.");
+		show_set_message(true, "%s", obs_module_text("Show.Sync.ConnectFirst"));
 		job_free(job);
 		return false;
 	}
@@ -533,7 +541,7 @@ static bool start_job(struct job *job)
 	cj_free(meta);
 	const enum show_busy busy = job->kind == JOB_SAVE_UP ? SHOW_UPLOADING : SHOW_PULLING;
 	lock();
-	set_str(&sy.step, job->kind == JOB_SAVE_UP ? "Uploading" : "Downloading");
+	set_str(&sy.step, obs_module_text(job->kind == JOB_SAVE_UP ? "Show.Sync.Uploading" : "Show.Sync.Downloading"));
 	sy.done = sy.total = 0;
 	sy.seq++;
 	unlock();
@@ -574,7 +582,7 @@ static bool start_save_up(const char *id, bool automatic)
 static bool start_pull(const char *relay, bool switch_after, bool automatic)
 {
 	if (!safe_relay_id(relay)) {
-		show_set_message(true, "That CTD Relay profile can't be pulled.");
+		show_set_message(true, "%s", obs_module_text("Show.Sync.CantPull"));
 		return false;
 	}
 	struct job *job = new_job(JOB_PULL);
@@ -595,15 +603,14 @@ bool show_sync_save_up(const char *id)
 	bool linked = relay && *relay;
 	cj_free(meta);
 	if (!exists) {
-		show_set_message(true, "That show profile is gone.");
+		show_set_message(true, "%s", obs_module_text("Show.Msg.Gone"));
 		return false;
 	}
 	lock();
 	const bool have_target = linked || (sy.relay_profile_id && *sy.relay_profile_id);
 	unlock();
 	if (!have_target) {
-		show_set_message(true,
-				 "Pick a CTD Relay profile in the dock first: the show profile is saved up to it.");
+		show_set_message(true, "%s", obs_module_text("Show.Sync.PickProfile"));
 		return false;
 	}
 	if (strcmp(show_active_id_copy(active), id) == 0) {
@@ -635,7 +642,7 @@ bool show_sync_resolve(enum show_conflict_choice choice)
 	}
 	unlock();
 	if (!job) {
-		show_set_message(true, "There is nothing to decide any more.");
+		show_set_message(true, "%s", obs_module_text("Show.Sync.NothingToDecide"));
 		return false;
 	}
 	job->choice = choice;
@@ -758,11 +765,20 @@ static void tick_ui(void *unused)
 			sy.pending_upload[0] = '\0';
 			if (!st.message_is_error) /* the Update before it worked (or found no changes) */
 				start_save_up(id, false);
-		} else if (connected) {
+		} else if (connected && !st.live) {
+			/* never while an output is active: a queued save-up or an automatic pull moves whole bundles and
+			 * assets, and waits for the show to end (the user's own Save / Update / Pull still run at once) */
 			bool started = false;
 			cj *due = show_sync_queue_due(now_s());
-			if (cj_size(due))
-				started = start_save_up(cj_str(cj_at(due, 0)), true);
+			if (cj_size(due)) {
+				const char *id = cj_str(cj_at(due, 0));
+				cj *meta = show_store_meta(id);
+				if (meta)
+					started = start_save_up(id, true);
+				else
+					show_sync_queue_remove(id); /* the profile was deleted: nothing left to save */
+				cj_free(meta);
+			}
 			cj_free(due);
 			for (size_t i = 0; !started && i < st.count; i++) {
 				const struct show_entry *e = &st.entries[i];

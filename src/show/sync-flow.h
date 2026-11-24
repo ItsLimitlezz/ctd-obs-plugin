@@ -92,6 +92,17 @@ bool show_flow_find_linked(const char *relay_profile, char id_out[37]);
 /* A random v4 uuid (37 bytes). */
 void show_flow_new_uuid(char out[37]);
 
+/* What a finished save-up does to its entry in the offline queue (sync.c): REMOVE when it is done with (saved, a
+ * conflict to answer, the token refused), RETRY when it is queued and has to try again later (the next attempt moves
+ * back, 15 s … 600 s), KEEP otherwise (a manual save-up that never queued, or a stop). Every failed attempt of a queued
+ * save-up is a RETRY: one that left the entry due made it run again back to back. */
+enum show_save_up_queue {
+	SHOW_SAVE_UP_QUEUE_KEEP,
+	SHOW_SAVE_UP_QUEUE_REMOVE,
+	SHOW_SAVE_UP_QUEUE_RETRY,
+};
+enum show_save_up_queue show_save_up_queue_action(bool ok, bool conflict, enum show_relay_result result, bool queued);
+
 #ifdef __cplusplus
 }
 #endif

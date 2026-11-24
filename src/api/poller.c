@@ -251,11 +251,11 @@ static void poll_once(struct mtx_poller *p, const struct ctd_server *server)
 		p->logged_total = next.count;
 		p->logged_live = live;
 		if (next.status == MTX_API_OK)
-			blog(LOG_INFO, "[ctd-live] MediaMTX '%s' (%s): connected%s%s, %zu streams, %zu live",
+			blog(LOG_INFO, "[CTD] live-source: MediaMTX '%s' (%s): connected%s%s, %zu streams, %zu live",
 			     server->name, server->host, *next.version ? ", " : "", next.version, next.count, live);
 		else if (port)
 			blog(next.status == MTX_API_UNAUTHORIZED ? LOG_WARNING : LOG_INFO,
-			     "[ctd-live] MediaMTX '%s' (%s): %s", server->name, server->host,
+			     "[CTD] live-source: MediaMTX '%s' (%s): %s", server->name, server->host,
 			     status_words(next.status));
 		p->logged = next.status;
 		p->logged_once = true;
