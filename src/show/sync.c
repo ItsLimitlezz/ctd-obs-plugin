@@ -190,11 +190,21 @@ static void progress_cb(void *opaque, uint64_t done, uint64_t total)
 	unlock();
 }
 
+/* sync-flow.c (pure C, no libobs) names its steps in English; the dock shows them in the user's language */
+static const char *step_text(const char *step)
+{
+	if (step && strcmp(step, "Uploading") == 0)
+		return obs_module_text("Show.Sync.Uploading");
+	if (step && strcmp(step, "Downloading") == 0)
+		return obs_module_text("Show.Sync.Downloading");
+	return step;
+}
+
 static void step_cb(void *opaque, const char *step, uint64_t done, uint64_t total)
 {
 	(void)opaque;
 	lock();
-	set_str(&sy.step, step);
+	set_str(&sy.step, step_text(step));
 	sy.done = done;
 	sy.total = total;
 	sy.seq++;
@@ -400,57 +410,41 @@ static void message_for(const struct job *job, const struct show_sync_outcome *o
 {
 	if (job->kind == JOB_SAVE_UP || (job->kind == JOB_RESOLVE && job->choice == SHOW_CONFLICT_KEEP_MINE)) {
 		if (ok && out->no_changes)
-			show_set_message(false, "%s is already on CTD Relay (revision %lld).", job->name,
+			show_set_message(false, obs_module_text("Show.Sync.AlreadyOnRelay"), job->name,
 					 (long long)out->revision);
 		else if (ok && out->secrets_local)
-			show_set_message(false,
-					 "Saved %s to CTD Relay as revision %lld (%d value(s) stay on this machine).",
-					 job->name, (long long)out->revision, out->secrets_local);
+			show_set_message(false, obs_module_text("Show.Sync.SavedSecretsLocal"), job->name,
+					 (long long)out->revision, out->secrets_local);
 		else if (ok)
-			show_set_message(false, "Saved %s to CTD Relay as revision %lld.", job->name,
+			show_set_message(false, obs_module_text("Show.Sync.Saved"), job->name,
 					 (long long)out->revision);
 		else if (out->conflict)
-			show_set_message(true, "%s Choose which version to keep.", out->error);
+			show_set_message(true, obs_module_text("Show.Sync.Conflict"), out->error);
 		else if (out->result == SHOW_RELAY_OFFLINE)
-			show_set_message(
-				true,
-				"CTD Relay can't be reached: %s stays on this machine and is saved up when Relay is "
-				"back.",
-				job->name);
+			show_set_message(true, obs_module_text("Show.Sync.Offline"), job->name);
 		else if (out->result == SHOW_RELAY_DENIED)
-			show_set_message(true,
-					 "CTD Relay refused: pair this machine again so it gets Show Profiles access "
-					 "(show:read, show:write).");
+			show_set_message(true, "%s", obs_module_text("Show.Sync.DeniedSaveUp"));
 		else
 			show_set_message(true, "%s", out->error);
 		return;
 	}
 	if (!ok) {
 		if (out->result == SHOW_RELAY_DENIED)
-			show_set_message(true,
-					 "CTD Relay refused: pair this machine again so it gets Show Profiles access.");
+			show_set_message(true, "%s", obs_module_text("Show.Sync.Denied"));
 		else if (!job->automatic || out->result != SHOW_RELAY_OFFLINE)
 			show_set_message(true, "%s", out->error);
 		return;
 	}
 	if (job->kind == JOB_RESOLVE && job->choice == SHOW_CONFLICT_SAVE_AS_NEW)
-		show_set_message(
-			false,
-			"Kept your version as a new local show profile; %s now has revision %lld from CTD Relay.",
-			job->name, (long long)out->revision);
+		show_set_message(false, obs_module_text("Show.Sync.SavedAsNew"), job->name, (long long)out->revision);
 	else if (job->kind == JOB_RESOLVE)
-		show_set_message(
-			false,
-			"%s now has revision %lld from CTD Relay; your version is kept as an older local revision.",
-			job->name, (long long)out->revision);
+		show_set_message(false, obs_module_text("Show.Sync.TookTheirs"), job->name, (long long)out->revision);
 	else if (out->no_changes)
-		show_set_message(false, "This machine already has revision %lld.", (long long)out->revision);
+		show_set_message(false, obs_module_text("Show.Sync.AlreadyHave"), (long long)out->revision);
 	else if (job->switch_after)
-		show_set_message(false, "Downloaded revision %lld; switching…", (long long)out->revision);
+		show_set_message(false, obs_module_text("Show.Sync.DownloadedSwitching"), (long long)out->revision);
 	else
-		show_set_message(false,
-				 "Downloaded revision %lld from CTD Relay: switch to it to apply it (Update ready).",
-				 (long long)out->revision);
+		show_set_message(false, obs_module_text("Show.Sync.Downloaded"), (long long)out->revision);
 }
 
 static void *job_thread(void *param)
@@ -515,7 +509,7 @@ static bool start_job(struct job *job)
 {
 	char *base = NULL, *token = NULL, *profile = NULL;
 	if (!ms_show_access(&base, &token, &profile)) {
-		show_set_message(true, "Connect the dock to CTD Relay first.");
+		show_set_message(true, "%s", obs_module_text("Show.Sync.ConnectFirst"));
 		job_free(job);
 		return false;
 	}
@@ -533,7 +527,7 @@ static bool start_job(struct job *job)
 	cj_free(meta);
 	const enum show_busy busy = job->kind == JOB_SAVE_UP ? SHOW_UPLOADING : SHOW_PULLING;
 	lock();
-	set_str(&sy.step, job->kind == JOB_SAVE_UP ? "Uploading" : "Downloading");
+	set_str(&sy.step, obs_module_text(job->kind == JOB_SAVE_UP ? "Show.Sync.Uploading" : "Show.Sync.Downloading"));
 	sy.done = sy.total = 0;
 	sy.seq++;
 	unlock();
@@ -574,7 +568,7 @@ static bool start_save_up(const char *id, bool automatic)
 static bool start_pull(const char *relay, bool switch_after, bool automatic)
 {
 	if (!safe_relay_id(relay)) {
-		show_set_message(true, "That CTD Relay profile can't be pulled.");
+		show_set_message(true, "%s", obs_module_text("Show.Sync.CantPull"));
 		return false;
 	}
 	struct job *job = new_job(JOB_PULL);
@@ -595,15 +589,14 @@ bool show_sync_save_up(const char *id)
 	bool linked = relay && *relay;
 	cj_free(meta);
 	if (!exists) {
-		show_set_message(true, "That show profile is gone.");
+		show_set_message(true, "%s", obs_module_text("Show.Msg.Gone"));
 		return false;
 	}
 	lock();
 	const bool have_target = linked || (sy.relay_profile_id && *sy.relay_profile_id);
 	unlock();
 	if (!have_target) {
-		show_set_message(true,
-				 "Pick a CTD Relay profile in the dock first: the show profile is saved up to it.");
+		show_set_message(true, "%s", obs_module_text("Show.Sync.PickProfile"));
 		return false;
 	}
 	if (strcmp(show_active_id_copy(active), id) == 0) {
@@ -635,7 +628,7 @@ bool show_sync_resolve(enum show_conflict_choice choice)
 	}
 	unlock();
 	if (!job) {
-		show_set_message(true, "There is nothing to decide any more.");
+		show_set_message(true, "%s", obs_module_text("Show.Sync.NothingToDecide"));
 		return false;
 	}
 	job->choice = choice;

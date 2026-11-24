@@ -127,7 +127,7 @@ static void save(void)
 	obs_data_array_release(items);
 	char *file = config_file();
 	if (file && !obs_data_save_json_safe(root, file, "tmp", "bak"))
-		blog(LOG_WARNING, "[ctd-live] couldn't save the server profiles");
+		blog(LOG_WARNING, "[CTD] live-source: couldn't save the server profiles");
 	bfree(file);
 	obs_data_release(root);
 }
@@ -174,7 +174,7 @@ static void load(void)
 	if (!servers.list.num) {
 		struct ctd_server s = {0};
 		new_id(s.id, sizeof(s.id));
-		s.name = bstrdup("This computer");
+		s.name = bstrdup(obs_module_text("Servers.DefaultName"));
 		s.host = bstrdup("127.0.0.1");
 		s.srt_port = 8890;
 		s.api_url = bstrdup("http://127.0.0.1:9997");
@@ -294,7 +294,7 @@ void servers_put(const struct ctd_server *server, char *id_out, size_t size)
 	snprintf(id, sizeof(id), "%s", existing->id);
 	save();
 	pthread_mutex_unlock(&servers.mutex);
-	blog(LOG_INFO, "[ctd-live] server profile '%s' saved", server->name ? server->name : "");
+	blog(LOG_INFO, "[CTD] live-source: server profile '%s' saved", server->name ? server->name : "");
 	if (id_out)
 		snprintf(id_out, size, "%s", id);
 	notify(id); /* H4: sources on it reconnect */

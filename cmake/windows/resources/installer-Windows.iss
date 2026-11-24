@@ -31,7 +31,7 @@ CloseApplications=yes
 CloseApplicationsFilter=obs64.exe
 
 [Messages]
-WelcomeLabel2=This installs the CTD OBS Plugin [ver] (CTD Live Source, CTD Hub, CTD Relay) for every user of this computer.%n%nClose OBS before you continue.
+WelcomeLabel2=This installs the CTD OBS Plugin [ver] (CTD Live Source, CTD Relay) for every user of this computer.%n%nClose OBS before you continue.
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

@@ -68,10 +68,16 @@ struct ms_snapshot {
 	obs_data_array_t *overlays; /* GET /profiles/{id}/overlays items */
 	obs_data_t *ingest;         /* the last ingest asked for with ms_request_ingest, or NULL */
 	uint64_t ingest_seq;        /* goes up each time a requested ingest arrives (or fails: ingest NULL) */
-	obs_data_array_t *chat;     /* recent chat.message envelopes, oldest first, at most 200, moderation applied */
+	obs_data_array_t *chat;     /* recent chat.message envelopes, oldest first, at most 500, moderation applied */
 	uint64_t chat_seq;          /* goes up whenever chat changes */
 	obs_data_array_t *alerts;   /* recent alerts, newest last: {ts, level ("down", "up", "notice"), text} */
 	uint64_t alerts_seq;
+	/* The token may not read these (CTD Relay answered 403): whoever approved the pairing left the permission out, or
+	 * the token is older than it. Pairing again (ms_start_pairing, the connection stays up meanwhile) asks for a
+	 * token that has them. Chat needs chat:read (GET /chat and chat.* events; without it the event stream just
+	 * carries no chat); status, viewers and profiles need status:read. */
+	bool chat_need_scope;
+	bool status_need_scope;
 	enum ms_overlay_request overlay_request;
 	char *overlay_message;       /* the outcome, for the dock */
 	obs_data_t *overlay_created; /* the overlay CTD Overlay made (a resource: id, name, url, width, height, meta) */
@@ -110,7 +116,9 @@ bool ms_show_access(char **api_base, char **token, char **profile_id);
 
 /* "nas.local:30080", "http://192.0.2.10:30080" or a full ".../api/v1" URL. Changing it disconnects. */
 void ms_set_server(const char *server);
-/* Asks CTD Relay for a pairing code (H18). */
+/* Asks CTD Relay for a pairing code (H18). While a token is held it stays in use until the new pairing is approved
+ * ("pair again" for more permissions): the snapshot's pairing_code and approve_url are set while one is pending, also
+ * when link has gone back to MS_CONNECTED. */
 void ms_start_pairing(void);
 /* Forgets the token. */
 void ms_disconnect(void);

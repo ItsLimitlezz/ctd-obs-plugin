@@ -103,13 +103,13 @@ bool sync_groups_configure(const char *name, int mode, int max_delay_ms, int fix
 	obs_data_release(groups);
 	char *file = config_file();
 	if (file && !obs_data_save_json_safe(manager.settings, file, "tmp", "bak"))
-		blog(LOG_WARNING, "[ctd-live] couldn't save the sync group settings");
+		blog(LOG_WARNING, "[CTD] live-source: couldn't save the sync group settings");
 	bfree(file);
 	for (int i = 0; i < manager.group_count; i++)
 		if (strcmp(manager.groups[i].name, name) == 0)
 			apply_settings(&manager.groups[i]);
 	pthread_mutex_unlock(&manager.mutex);
-	blog(LOG_INFO, "[ctd-live] sync group \"%s\" settings changed", name);
+	blog(LOG_INFO, "[CTD] live-source: sync group \"%s\" settings changed", name);
 	return true;
 }
 
@@ -171,7 +171,7 @@ static void announce(const char *group, const char *source, enum sync_state stat
 	ms_post_event("obs.sync.status", data);
 	obs_data_release(data);
 	blog(sync_state_lost(state) ? LOG_WARNING : LOG_INFO,
-	     "[ctd-live] sync group \"%s\": %s is %s (offset %.0f ms, delay %.0f ms)", group, source,
+	     "[CTD] live-source: sync group \"%s\": %s is %s (offset %.0f ms, delay %.0f ms)", group, source,
 	     sync_state_name(state), offset_ms, delay_ms);
 }
 
@@ -260,7 +260,7 @@ static void tick(void)
 				sync_member_join(&r->g, m, s->info.delay_ms);
 				snprintf(r->members[m], sizeof(r->members[m]), "%s", s->name);
 				r->announced[m] = false;
-				blog(LOG_INFO, "[ctd-live] sync group \"%s\": %s joined", r->name, s->name);
+				blog(LOG_INFO, "[CTD] live-source: sync group \"%s\": %s joined", r->name, s->name);
 			}
 		}
 		if (slot < 0)
@@ -281,7 +281,7 @@ static void tick(void)
 		/* members that left (renamed, removed, or moved to another group) */
 		for (int m = 0; m < SYNC_MAX_MEMBERS; m++) {
 			if (r->g.members[m].used && !seen[gi][m]) {
-				blog(LOG_INFO, "[ctd-live] sync group \"%s\": %s left", r->name, r->members[m]);
+				blog(LOG_INFO, "[CTD] live-source: sync group \"%s\": %s left", r->name, r->members[m]);
 				r->g.members[m].used = false;
 			}
 		}

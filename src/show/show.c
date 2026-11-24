@@ -455,7 +455,7 @@ static void *save_thread(void *param)
 	os_set_thread_name("ctd-show-save");
 
 	if (!show_find_collection_file(job->basic, job->collection_name, collection_path, sizeof(collection_path))) {
-		snprintf(err, sizeof(err), "Can't find the file of the scene collection \"%s\".", job->collection_name);
+		snprintf(err, sizeof(err), obs_module_text("Show.Msg.NoCollectionFile"), job->collection_name);
 		goto done;
 	}
 	if (job->created && !show_store_create(job->id, job->name, err, sizeof(err))) {
@@ -501,11 +501,12 @@ done:
 	if (!ok && job->created)
 		show_store_delete(job->id);
 	if (ok && seq == before)
-		show_set_message(false, "No changes since the last save of %s.", job->name);
+		show_set_message(false, obs_module_text("Show.Msg.NoChanges"), job->name);
 	else if (ok)
-		show_set_message(false, "Saved %s on this machine.", job->name);
+		show_set_message(false, obs_module_text("Show.Msg.SavedLocal"), job->name);
 	else
-		show_set_message(true, "Couldn't save %s: %s", job->name, err[0] ? err : "unknown error");
+		show_set_message(true, obs_module_text("Show.Msg.SaveFailed"), job->name,
+				 err[0] ? err : obs_module_text("Show.Msg.UnknownError"));
 	if (!ok)
 		blog(LOG_WARNING, SHOW_LOG_PREFIX "save failed: %s", err);
 	show_set_warnings(warnings);
@@ -521,7 +522,7 @@ static void save_start_ui(void *param)
 {
 	struct save_job *job = param;
 	if (!show_run_worker(save_thread, job)) {
-		show_set_message(true, "Busy: wait for the current Show Profiles action to finish.");
+		show_set_message(true, "%s", obs_module_text("Show.Msg.Busy"));
 		show_set_busy(SHOW_IDLE);
 		bfree(job);
 	}
@@ -530,7 +531,7 @@ static void save_start_ui(void *param)
 static bool begin(enum show_busy busy)
 {
 	if (!sp.available) {
-		show_set_message(true, "Show Profiles needs CTD OBS.");
+		show_set_message(true, "%s", obs_module_text("Show.Msg.NeedsCtdObs"));
 		return false;
 	}
 	join_finished_worker();
@@ -542,7 +543,7 @@ static bool begin(enum show_busy busy)
 	}
 	unlock();
 	if (!free_now)
-		show_set_message(true, "Busy: wait for the current Show Profiles action to finish.");
+		show_set_message(true, "%s", obs_module_text("Show.Msg.Busy"));
 	return free_now;
 }
 
@@ -551,7 +552,7 @@ bool show_begin_job(enum show_busy busy, void *(*fn)(void *), void *param)
 	if (!begin(busy))
 		return false;
 	if (!show_run_worker(fn, param)) {
-		show_set_message(true, "Busy: wait for the current Show Profiles action to finish.");
+		show_set_message(true, "%s", obs_module_text("Show.Msg.Busy"));
 		show_set_busy(SHOW_IDLE);
 		return false;
 	}
@@ -591,11 +592,11 @@ static bool start_save(const char *id, const char *name, bool create)
 	bfree(profile);
 	if (!ok) {
 		bfree(job);
-		show_set_message(true, "Can't find OBS's current scene collection and profile.");
+		show_set_message(true, "%s", obs_module_text("Show.Msg.NoCurrentSetup"));
 		show_set_busy(SHOW_IDLE);
 		return false;
 	}
-	show_set_message(false, "Saving %s…", name);
+	show_set_message(false, obs_module_text("Show.Msg.Saving"), name);
 	obs_frontend_save();
 	obs_queue_task(OBS_TASK_UI, save_start_ui, job, false);
 	return true;
@@ -605,11 +606,11 @@ bool show_save_current_as(const char *name)
 {
 	char other[37];
 	if (!show_name_is_valid(name)) {
-		show_set_message(true, "\"%s\" can't be a show profile name.", name ? name : "");
+		show_set_message(true, obs_module_text("Show.Msg.BadName"), name ? name : "");
 		return false;
 	}
 	if (show_store_find_by_name(name, other)) {
-		show_set_message(true, "A show profile named \"%s\" already exists: pick it and use Update.", name);
+		show_set_message(true, obs_module_text("Show.Msg.NameExists"), name);
 		return false;
 	}
 	char *uuid = os_generate_uuid();
@@ -625,14 +626,14 @@ bool show_update(const char *id)
 	snprintf(name, sizeof(name), "%s", meta ? cj_get_str(meta, "name") : "");
 	cj_free(meta);
 	if (!name[0]) {
-		show_set_message(true, "That show profile is gone.");
+		show_set_message(true, "%s", obs_module_text("Show.Msg.Gone"));
 		return false;
 	}
 	lock();
 	bool active = strcmp(sp.active_id, id) == 0;
 	unlock();
 	if (!active) {
-		show_set_message(true, "Switch to %s first: Update saves the setup that is loaded now.", name);
+		show_set_message(true, obs_module_text("Show.Msg.SwitchFirst"), name);
 		return false;
 	}
 	return start_save(id, name, false);
@@ -644,11 +645,11 @@ bool show_switch(const char *id, int64_t seq)
 {
 	char reason[256];
 	if (!show_store_meta_exists(id)) {
-		show_set_message(true, "That show profile is gone.");
+		show_set_message(true, "%s", obs_module_text("Show.Msg.Gone"));
 		return false;
 	}
 	if (!show_guard_idle(reason, sizeof(reason))) {
-		show_set_message(true, "Switching is off while live: %s", reason);
+		show_set_message(true, obs_module_text("Show.Msg.Live"), reason);
 		return false;
 	}
 	if (!begin(SHOW_SWITCHING))
@@ -669,9 +670,9 @@ static void *delete_thread(void *param)
 	snprintf(name, sizeof(name), "%s", meta ? cj_get_str(meta, "name") : id);
 	cj_free(meta);
 	if (show_store_delete(id))
-		show_set_message(false, "Deleted %s from this machine.", name);
+		show_set_message(false, obs_module_text("Show.Msg.Deleted"), name);
 	else
-		show_set_message(true, "Couldn't delete all of %s's files.", name);
+		show_set_message(true, obs_module_text("Show.Msg.DeleteFailed"), name);
 	show_reload_entries();
 	show_set_busy(SHOW_IDLE);
 	bfree(id);
@@ -684,7 +685,7 @@ bool show_delete(const char *id)
 	bool active = strcmp(sp.active_id, id) == 0;
 	unlock();
 	if (active) {
-		show_set_message(true, "That show profile is loaded now: switch to another one first.");
+		show_set_message(true, "%s", obs_module_text("Show.Msg.LoadedNow"));
 		return false;
 	}
 	if (!begin(SHOW_DELETING))

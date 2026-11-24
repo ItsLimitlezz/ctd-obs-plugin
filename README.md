@@ -17,10 +17,10 @@
 
 ## What it does
 
-- **CTD Live Source (SRT)** for feeds from [MediaMTX](https://github.com/bluenviron/mediamtx). It replaces the stock
+- **CTD Live Source** for feeds from [MediaMTX](https://github.com/bluenviron/mediamtx). It replaces the stock
   Media Source for phones, encoders and bonded cellular units: it never drifts behind live, holds the last frame and then
   shows a card when the signal drops, and reconnects by itself.
-- **CTD Hub dock:** every stream on your server, live first, with bitrate, link quality and one-click add to a scene.
+- **CTD Relay · Feeds dock:** every stream on your server, live first, with bitrate, link quality and one-click add to a scene.
 - **Issues and fixes:** camera offline, packet loss, frozen picture, a dead audio channel and more, each in plain words
   with a one-click fix (and an optional Auto-fix).
 - **Audio repair, delays, timecode and sync groups:** fix a dead or swapped channel and fill audio holes. Delay video or
@@ -42,16 +42,16 @@ The plugin is the OBS end of the CTD family:
 ## Set up in five minutes
 
 1. **Install** the plugin (below) and restart OBS.
-2. **Tools ▸ CTD Live servers…**: add your MediaMTX server (its address; the API URL `http://<address>:9997` if its
+2. **Tools ▸ CTD Relay feed servers…** (or **Feed servers…** in the CTD Relay dock): add your MediaMTX server (its address; the API URL `http://<address>:9997` if its
    API is on) and press **Test**.
-3. **Docks ▸ CTD Hub**: your streams appear, live first. Double-click one to add it to the current scene, or press
+3. **Docks ▸ CTD Relay · Feeds** (or **Incoming feeds…** in the CTD Relay dock): your streams appear, live first. Double-click one to add it to the current scene, or press
    **Add all live streams** for a grid.
-4. Point a camera at it. The CTD Hub's right-click menu copies the SRT, RTMP or WHIP **publish URL** to paste into the
+4. Point a camera at it. The Feeds dock's right-click menu copies the SRT, RTMP or WHIP **publish URL** to paste into the
    camera app.
 5. Optional: **Docks ▸ CTD Relay**, **Connect** and approve the code in CTD Relay, so the rest of the CTD apps see what
    OBS is doing.
 
-That's it. When something goes wrong, the CTD Hub's issues panel says what and offers the fix.
+That's it. When something goes wrong, the Feeds dock's issues panel says what and offers the fix.
 
 ## Install
 
@@ -65,7 +65,7 @@ system FFmpeg, like OBS does. Download the package for your platform from the [r
 | macOS (Apple silicon and Intel) | `ctd-live-source-<version>-macos-universal.pkg` | run the installer (see below while it's unsigned) |
 | Ubuntu 24.04 | `ctd-live-source-<version>-x86_64-linux-gnu.deb` | `sudo apt install ./ctd-live-source-<version>-x86_64-linux-gnu.deb` |
 
-Restart OBS. `[ctd-live] plugin loaded (version <version>)` in the log means it loaded.
+Restart OBS. `[CTD] live-source: plugin loaded (version <version>)` in the log means it loaded.
 
 The macOS package isn't signed by Apple yet, so macOS refuses to open it at first ("can't be opened because Apple
 cannot check it"). Open it anyway once: System Settings ▸ Privacy & Security ▸ **Open Anyway** (or Control-click the
@@ -91,7 +91,7 @@ The transport, demux and decode layers reuse the FFmpeg libraries OBS already sh
 the stock source speaks `srt://`). Only the policy layer is ours.
 ## Use
 
-**Sources ▸ + ▸ CTD Live Source (SRT)**. You never type a URL. The plugin
+**Sources ▸ + ▸ CTD Live Source**. You never type a URL. The plugin
 builds MediaMTX's SRT read URL (`streamid=read:<path>`) itself, so you only
 enter the server address and the path name.
 
@@ -122,7 +122,7 @@ At the bottom of the properties panel, the stats show:
 **Refresh stats** updates them. **Reconnect now** drops the connection and
 dials again straight away. Connects, reconnects (with reason), signal loss and
 its return, and resyncs are logged. Every line names its source
-(`[ctd-live:Cam 1] ...`), so a show with several feeds can be diagnosed after
+(`[CTD] live-source: Cam 1: ...`), so a show with several feeds can be diagnosed after
 the fact. A stream that isn't up yet is retried forever but logged quietly: its
 first failure, then one line a minute until it connects.
 
@@ -218,12 +218,12 @@ screen and in the mix at once: a phone that arrives 400 ms late and one that arr
 - A member that loses its timecode **freewheels** on its last delay and relocks when timecode returns; one that
   reconnects starts from its previous delay. Both raise **Sync lost** in the issues.
 - Each source's own delays add on top, to trim a known camera A/V offset.
-- The CTD Hub dock lists each group: members, timecode, measured offset, delay and lock state. Group settings live in
+- The CTD Relay · Feeds dock lists each group: members, timecode, measured offset, delay and lock state. Group settings live in
   `sync-groups.json` in the plugin's config folder, and can be changed with `SetSyncGroup` over obs-websocket.
 
 ### Sync check
 
-Not sure whether a camera's sound and picture line up? **CTD Hub ▸ Sync clip** opens a page that flashes white and
+Not sure whether a camera's sound and picture line up? **CTD Relay · Feeds ▸ Sync clip** opens a page that flashes white and
 beeps once a second. Show it full screen on a phone (sound up) in front of the camera, then press **Start the sync
 check** in that source's properties. For 10 s the plugin watches for the flashes and listens for the beeps, pairs
 them, and reports the median: "The sound comes 120 ms after the picture". **Delay the video to match** (or the audio,
@@ -249,17 +249,28 @@ talks to for everything after OBS:
 
 1. Type the server (e.g. `nas.local:30080`; there is no default) and press **Connect**. The dock shows a code. Approve it in CTD
    CTD Relay ▸ Settings ▸ API (**Open the approval page** takes you there); no token to copy.
-2. Pick the profile this OBS goes to (for example "Miami or Bust" or "DPRTMNT").
+2. Pick the profile this CTD OBS goes to (for example "Miami or Bust" or "DPRTMNT").
 3. The dock shows the profile's session (with the total watching across every platform), feed bitrates, every
    destination (red when down, with the reason) and the merged chat. "Joined" lines from Instagram and TikTok are
    dimmed.
-4. **Send OBS's stream to this profile…** sets OBS's stream server and key from the profile (never while
+4. **Send CTD OBS's stream to this profile…** sets OBS's stream server and key from the profile (never while
    streaming; the key is shown masked). In CTD OBS it also sets the built-in vertical canvas's stream (a "CTD
    Relay" output) to the profile's vertical feed, so both feeds go live together. In stock OBS the vertical feed's
    URL is copied for Aitum Vertical instead.
+   It also makes the stream one CTD Relay can pass on: CTD Relay sends streams to the platforms unchanged, and they
+   need **H.264** video and **AAC** audio. An HEVC or AV1 encoder (say, from an imported profile) is switched to
+   this computer's hardware H.264 encoder (Apple VideoToolbox on a Mac; NVENC, AMF or Quick Sync on Windows), else
+   x264, with a 2 s keyframe interval and CBR; your bitrate, resolution and frame rate stay. The dock says when it
+   switched. A **pre-flight check** in the dock, and in the log when a stream starts, warns when a stream to CTD
+   Relay is HEVC or AV1 or has no AAC audio, with **Fix it** to make the same change (not while streaming). In CTD
+   OBS the change applies at once; stock OBS needs a restart to load the new encoder.
 5. **Overlays** lists the profile's overlays from CTD Overlay. **Add to current scene** creates a browser source at
    the overlay's size. After a profile change, **Switch existing to this profile** points those sources at the new
    profile's matching overlays (same slot and canvas), so the scenes carry over. Nothing is ever deleted.
+   An overlay with several scenes (starting soon, BRB, ending…) shows a picker under the list: **Whole overlay
+   (follows the show)**, or one scene, added as its own source named `CTD · <overlay> · <scene>` that stays on that
+   scene. Switching keeps each source on its scene. Needs a CTD Overlay that publishes
+   its scenes (`meta.scenes` on its CTD Relay resources); with an older one only the whole overlay is offered.
 6. With API v1.4 the plugin also tells CTD Relay what OBS is doing, for its other apps such as CTD Live
    mobile: each CTD source's state (live, stalled, reconnecting, no signal, and how long a gap lasted) with its fps,
    size and lateness every 5 s, the main stream, recording and Aitum Vertical outputs going live, reconnecting or
@@ -269,7 +280,7 @@ talks to for everything after OBS:
 7. With API v1.3 the dock also shows the hub's shared timecode: run time since the session went live, UTC and the
    hub's local time, as `HH:MM:SS:FF`. It is synced to the hub over the network, so every app on the same hub reads
    the same time. Hover it to see how closely it is synced.
-8. With API v1.6, **Let CTD Live mobile control this OBS through CTD Relay** (off until you tick it) gives CTD
+8. With API v1.6, **Let CTD Live mobile control this CTD OBS through CTD Relay** (off until you tick it) gives CTD
    Relay OBS's WebSocket settings (Tools ▸ WebSocket Server Settings: port, password) and this PC's LAN address, so
    CTD Live mobile can switch scenes and start or stop the stream through the hub. The plugin re-reads them every
    30 s and sends them again when they change (and every 5 minutes anyway). Unticking tells CTD Relay to forget the
@@ -288,9 +299,29 @@ plugin doesn't follow redirects (the token would go along): use the address a se
 The connection is saved in the plugin's own settings, not in the scene collection. CTD Relay being down never
 affects the video sources.
 
+### CTD Producer dock
+
+**Docks ▸ CTD Producer** (also **Open CTD Producer** in the CTD Relay dock, and the CTD menu in CTD OBS) is what a
+producer watches during a show. It uses the CTD Relay dock's connection and profile and is read-only:
+
+- **Viewers:** every platform added up, and one chip per destination: its platform, the canvas that feeds it
+  (landscape or vertical), its state (live, starting, recovering, waiting for feed, down, offline) and its own count.
+  A platform that doesn't report a count shows a dash and is left out of the total; it is never counted as 0. The
+  numbers follow CTD Relay live.
+- **Chat:** one list with every platform's chat in the order it arrived, each line with its platform's badge and
+  the author in their colour. Platform notices (subs, raids) are in cyan, highlighted or paid messages are marked,
+  "joined" lines are dimmed. The chips above the list show or hide a platform or the joined lines (kept between
+  sessions). Messages a moderator removes disappear here too. It keeps the last 500 lines.
+- Scroll up to read back: the list holds still and a **↓ N new messages** button takes you to the newest again.
+- If the connection was approved in CTD Relay without **Read chat** or **Read status**, the dock says so and offers
+  **Pair again to show chat**: approve the new code in CTD Relay (the current connection keeps working meanwhile).
+
+Emotes and emoji are shown as text. Sending chat is not part of it yet.
+
 ### Server profiles
 
-**Tools ▸ CTD Live servers…** keeps the MediaMTX servers your sources read from, so each address and login is typed
+**Feed servers…** (in the CTD Relay dock and the Feeds dock; **Tools ▸ CTD Relay feed servers…** in stock OBS)
+keeps the MediaMTX servers your sources read from, so each address and login is typed
 once and every scene collection shares it. A profile holds a name, the address, the SRT port, the API URL
 (`http://<address>:9997`, blank for none), an API login or token, an SRT read login and an SRT passphrase. **Test**
 asks the API for its streams. A first run starts with "This computer" (`127.0.0.1`).
@@ -308,9 +339,13 @@ The read login goes into the SRT stream id the way MediaMTX expects (`read:<path
 into SRT's encryption. Both are handed to FFmpeg as options, never in the URL, so no log ever shows them. MediaMTX
 only accepts letters, digits and `! $ ( ) * + . ; < = > [ ] ^ _ - , @ # &` in credentials.
 
-### CTD Hub dock
+### CTD Relay · Feeds dock
 
-**Docks ▸ CTD Hub** lists the streams on a server profile, live first, refreshed from its poller: whether each is
+CTD Relay is the hub of the CTD apps; this dock is its incoming-feeds side (it used to be called "CTD Hub"; saved
+layouts and its settings carry over). Why it still has its own server list, and the plan to drop that:
+[docs/relay-is-the-hub.md](docs/relay-is-the-hub.md).
+
+**Docks ▸ CTD Relay · Feeds** (or **Incoming feeds…** in the CTD Relay dock) lists the streams on a server profile, live first, refreshed from its poller: whether each is
 live, its publisher (SRT, RTMP, WebRTC…) and address, its tracks, a two-minute bitrate sparkline, the SRT link's
 round trip and loss, and which OBS scenes use it. Double-click a stream (or right-click ▸ Add to current scene) to add
 a CTD Live Source for it, fitted to the canvas; **Add all live streams** does them all, optionally as a 2×2, 3×3 or
@@ -318,7 +353,7 @@ a CTD Live Source for it, fitted to the canvas; **Add all live streams** does th
 properties. A path your sources read that the server no longer has shows as "Path not on server".
 
 **Auto-add new live streams to** (off by default) adds a source for each stream that goes live, to the scene you pick;
-it never removes anything. With **Allow CTD Hub to change this MediaMTX** ticked on the profile, the dock can also
+it never removes anything. With **Allow CTD Relay · Feeds to change this MediaMTX** ticked on the profile, the dock can also
 create and remove paths and kick a stuck publisher so the camera reconnects; each asks first and is logged.
 
 Each source can **Disconnect when not in an active scene** (off by default) to save bandwidth; it reconnects as soon
@@ -349,10 +384,10 @@ in plain words with the likely cause and what to do:
 | Decoder falling behind | decoding a frame takes longer than the frame lasts, for 5 s |
 
 An issue is raised only after its condition has held that long, there is one per source and kind, and it clears 10 s
-after the condition is gone, so a flapping link doesn't flood anything. Issues show in the CTD Hub's issues panel and
+after the condition is gone, so a flapping link doesn't flood anything. Issues show in the Feeds dock's issues panel and
 as a badge on the stream's row, in the source's stats, in the OBS log, and through obs-websocket (below).
 
-Some issues come with a **fix**: right-click the issue in the CTD Hub (or double-click for the first one), or send
+Some issues come with a **fix**: right-click the issue in the Feeds dock (or double-click for the first one), or send
 `ApplyFix` over obs-websocket. "Raise this source's SRT latency" (frequent snaps) and "Decode on the graphics card"
 (decoder falling behind) and "Use the left (or right) channel on both sides" (one audio channel dead) and "Use that channel as timecode"
 (timecode on a program channel) change the
@@ -417,7 +452,7 @@ Lower the drift cap for tighter sync at the cost of more visible snaps; raise
 it if the upstream link is bad enough that snapping is more distracting than
 lateness.
 
-For just the sound of a feed, use **Sources ▸ + ▸ CTD Live Audio (SRT)**. It has
+For just the sound of a feed, use **Sources ▸ + ▸ CTD Live Audio**. It has
 the same settings and behaviour, but it is an audio input: it shows up in the
 audio mixer, takes no space on the canvas, and never decodes the video, so it
 costs almost nothing beyond the audio itself.
@@ -426,7 +461,7 @@ costs almost nothing beyond the audio itself.
 
 The full contract this is written against (functional requirements, the
 failure-mode table, and acceptance tests) is in [REQUIREMENTS.md](REQUIREMENTS.md).
-Where it's going (the hub, issue detection, audio repair, timecode sync) is in [SPEC.md](SPEC.md).
+Where it's going (the feeds dock, issue detection, audio repair, timecode sync) is in [SPEC.md](SPEC.md).
 
 The project uses the official
 [obs-plugintemplate](https://github.com/obsproject/obs-plugintemplate) layout:
@@ -483,6 +518,8 @@ opens a draft release with the packages attached.
 - `src/obs/`: the OBS source around it: settings, the properties window, the reconnecting card, and the MediaMTX
   stream list.
 - `src/ui/` and `src/multistream.c`: the CTD Relay dock and its client.
+- `src/ui/producer-dock.cpp` and `src/ui/producer-core.c`: the CTD Producer dock. Its logic (viewer totals, the
+  merged chat's ring) is plain C with no OBS or Qt in it, tested by `test/producer`.
 - `tools/ctd-live-probe/`: the engine on the command line.
 - `test/`: the test harness.
 

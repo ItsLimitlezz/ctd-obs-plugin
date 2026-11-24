@@ -62,12 +62,20 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ctd-engine)
 
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/plugin-main.c src/obs/ctd-live-source.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/loss-card.c src/obs/loss-video.c src/api/mediamtx-api.c)
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/api/poller.c src/ui/hub-dock.cpp src/obs/ws-vendor.c)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/api/poller.c src/ui/feeds-dock.cpp src/obs/ws-vendor.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/issues.c src/obs/sync-groups.c src/obs/webhook.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/obs-watch.c src/obs/servers.c src/ui/servers-dialog.cpp)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/ctd-settings.c)
+# A source per CTD Overlay scene in the CTD Relay dock; pure C, tested on its own: test/overlay-scenes
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/overlay-scenes.c)
+# What a stream to CTD Relay has to be (H.264 + AAC) and which encoder "Send stream" switches to; pure C, tested on
+# its own: test/relay-encoder
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/relay-encoder.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/http-client.c src/multistream.c src/ui/multistream-dock.cpp)
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obsws-config.c)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obsws-config.c src/obs/discovery.c src/ui/discovery-menu.cpp)
+# Keep scenes live for CTD apps' multiviews (bug B1). keep-live-core.c is pure C with its own tests:
+#   cmake --build --preset <preset> --target ctd-keep-live-tests && ctest --test-dir <build dir> -C RelWithDebInfo
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/keep-live.c src/obs/keep-live-core.c src/ui/keep-live-menu.cpp)
 # Show Profiles (design: hub epics/show-profiles-design.md). The pure-logic files are shared with ctd-show-tests.
 set(
   CTD_SHOW_PURE_SOURCES
@@ -92,6 +100,10 @@ target_sources(
   PRIVATE ${CTD_SHOW_PURE_SOURCES} src/show/apply.c src/show/device-map.c src/show/show.c src/show/sync.c
 )
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/device-map-dialog.cpp src/ui/show-section.cpp)
+# The CTD Producer dock: viewers per platform and one merged chat, from the CTD Relay client's snapshot.
+# producer-core.c is pure C (no libobs, no Qt) with its own tests:
+#   cmake --build --preset <preset> --target ctd-producer-tests && ctest --test-dir <build dir> -C RelWithDebInfo
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/producer-core.c src/ui/producer-dock.cpp)
 if(WIN32)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32 bcrypt)
 endif()
@@ -139,3 +151,5 @@ endif()
 #   cmake --build --preset <preset> --target ctd-show-tests && ctest --test-dir <build dir> -C RelWithDebInfo
 enable_testing()
 add_subdirectory(test/show)
+add_subdirectory(test/keep-live)
+add_subdirectory(test/producer)

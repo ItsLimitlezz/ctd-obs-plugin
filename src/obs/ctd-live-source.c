@@ -194,7 +194,7 @@ struct ctd_source {
 
 /* --------------------------------------------------------------- logging -- */
 
-/* Every line names its source, "[ctd-live:Cam 1] ..." (SPEC R18), so a show's log can be read with many feeds. */
+/* Every line names its source, "[CTD] live-source: Cam 1: ..." (SPEC R18), so a show's log can be read with many feeds. */
 #ifdef __GNUC__
 __attribute__((format(printf, 3, 4)))
 #endif
@@ -211,7 +211,7 @@ ctd_log(struct ctd_source *ctx, int level, const char *format, ...)
 	va_start(args, format);
 	dstr_vprintf(&message, format, args);
 	va_end(args);
-	blog(level, "[ctd-live:%s] %s", name, message.array ? message.array : "");
+	blog(level, "[CTD] live-source: %s: %s", name, message.array ? message.array : "");
 	dstr_free(&message);
 }
 
@@ -647,30 +647,27 @@ static char *run_path_op(struct ctd_source *ctx, const struct mtx_api_server *se
 	switch (status) {
 	case MTX_API_OK:
 		if (create)
-			dstr_printf(&message, "Created \"%s\" on the server. It lasts until MediaMTX restarts.", path);
+			dstr_printf(&message, obs_module_text("Source.Path.Created"), path);
 		else
-			dstr_printf(&message, "Deleted \"%s\" from the server.", path);
+			dstr_printf(&message, obs_module_text("Source.Path.Deleted"), path);
 		break;
 	case MTX_API_REJECTED:
 		if (create)
-			dstr_printf(&message, "The server refused \"%s\": the name is taken or not allowed.", path);
+			dstr_printf(&message, obs_module_text("Source.Path.CreateRefused"), path);
 		else
-			dstr_printf(&message, "The server refused to delete \"%s\".", path);
+			dstr_printf(&message, obs_module_text("Source.Path.DeleteRefused"), path);
 		break;
 	case MTX_API_NOT_FOUND:
 		if (create)
-			dstr_copy(&message, "No MediaMTX API answered on that port.");
+			dstr_copy(&message, obs_module_text("Source.Path.NoApi"));
 		else
-			dstr_printf(&message,
-				    "\"%s\" isn't in the server's config: a path that only exists while something "
-				    "is publishing to it can't be deleted.",
-				    path);
+			dstr_printf(&message, obs_module_text("Source.Path.NotInConfig"), path);
 		break;
 	case MTX_API_UNAUTHORIZED:
-		dstr_copy(&message, "The server refused: this API login can't change its config.");
+		dstr_copy(&message, obs_module_text("Source.Path.Unauthorized"));
 		break;
 	default:
-		dstr_copy(&message, "Couldn't reach the MediaMTX API.");
+		dstr_copy(&message, obs_module_text("Source.Path.Unreachable"));
 		break;
 	}
 
@@ -845,7 +842,7 @@ static bool path_edits_allowed(struct ctd_source *ctx)
 	const bool allowed = obs_data_get_bool(settings, S_ALLOW_EDITS);
 	obs_data_release(settings);
 	if (!allowed)
-		set_path_op_message(ctx, bstrdup("Turn on \"Allow this source to create and delete paths\" first."));
+		set_path_op_message(ctx, bstrdup(obs_module_text("Source.Path.AllowFirst")));
 	return allowed;
 }
 
@@ -853,7 +850,8 @@ static bool path_edits_allowed(struct ctd_source *ctx)
 static void queue_path_op(struct ctd_source *ctx, enum path_op op, char *path, bool slate)
 {
 	struct dstr message = {0};
-	dstr_printf(&message, op == PATH_OP_CREATE ? "Creating \"%s\"…" : "Deleting \"%s\"…", path);
+	dstr_printf(&message, obs_module_text(op == PATH_OP_CREATE ? "Source.Path.Creating" : "Source.Path.Deleting"),
+		    path);
 
 	pthread_mutex_lock(&ctx->api_mutex);
 	bfree(ctx->pending_op_path);
@@ -877,7 +875,7 @@ static bool create_path_clicked(obs_properties_t *props, obs_property_t *propert
 	char *path = current_setting(ctx, S_NEW_PATH);
 	if (!mtx_path_name_valid(path)) {
 		bfree(path);
-		set_path_op_message(ctx, bstrdup("Type a name for the new path: letters, digits and _ - . ~ / only."));
+		set_path_op_message(ctx, bstrdup(obs_module_text("Source.Path.InvalidName")));
 		return true;
 	}
 	obs_data_t *settings = obs_source_get_settings(ctx->source);
@@ -900,7 +898,7 @@ static bool delete_path_clicked(obs_properties_t *props, obs_property_t *propert
 	char *path = current_setting(ctx, S_PATH);
 	if (!mtx_path_name_valid(path)) {
 		bfree(path);
-		set_path_op_message(ctx, bstrdup("Pick the path to delete in the Stream list first."));
+		set_path_op_message(ctx, bstrdup(obs_module_text("Source.Path.PickFirst")));
 		return true;
 	}
 
@@ -916,7 +914,7 @@ static bool delete_path_clicked(obs_properties_t *props, obs_property_t *propert
 		queue_path_op(ctx, PATH_OP_DELETE, path, false);
 	} else {
 		struct dstr message = {0};
-		dstr_printf(&message, "Click again within 5 seconds to delete \"%s\" from the server.", path);
+		dstr_printf(&message, obs_module_text("Source.Path.ClickAgain"), path);
 		set_path_op_message(ctx, message.array);
 		bfree(path);
 	}
@@ -942,6 +940,16 @@ static bool allow_edits_modified(obs_properties_t *props, obs_property_t *proper
 	return true;
 }
 
+/* Appends sep, then the user-visible text key (data/locale) as a printf format, filled in with the rest */
+static void cat_text(struct dstr *out, const char *sep, const char *key, ...)
+{
+	va_list args;
+	va_start(args, key);
+	dstr_cat(out, sep);
+	dstr_vcatf(out, obs_module_text(key), args);
+	va_end(args);
+}
+
 /* Fills the stream dropdown and returns the status line under it. Call with api_mutex held. */
 static void describe_api_paths(struct ctd_source *ctx, obs_property_t *list, int api_port, struct dstr *status)
 {
@@ -950,37 +958,37 @@ static void describe_api_paths(struct ctd_source *ctx, obs_property_t *list, int
 
 	switch (ctx->api_status) {
 	case MTX_API_UNKNOWN:
-		dstr_copy(status, "Looking for streams on the server…");
+		dstr_copy(status, obs_module_text("Source.Api.Looking"));
 		break;
 	case MTX_API_OK: {
 		const size_t live = count_live(&ctx->api_paths);
 		if (!ctx->api_paths.count) {
-			dstr_copy(status, "No streams on the server yet");
+			dstr_copy(status, obs_module_text("Source.Api.NoStreams"));
 			break;
 		}
-		dstr_printf(status, "Live now: %s", live ? "" : "none");
+		dstr_printf(status, obs_module_text("Source.Api.LiveNow"),
+			    live ? "" : obs_module_text("Source.Api.None"));
 		for (size_t i = 0; i < live; i++)
 			dstr_catf(status, "%s%s", i ? ", " : "", ctx->api_paths.items[i].name);
 		if (ctx->api_paths.count > live)
-			dstr_catf(status, " · %zu more not live", ctx->api_paths.count - live);
+			cat_text(status, " · ", "Source.Api.MoreNotLive", ctx->api_paths.count - live);
 		break;
 	}
 	case MTX_API_UNAUTHORIZED:
-		dstr_copy(status, "The MediaMTX API needs a login: fill in the API username and password below");
+		dstr_copy(status, obs_module_text("Source.Api.NeedLogin"));
 		break;
 	case MTX_API_NOT_FOUND:
 		if (api_port)
-			dstr_printf(status, "No MediaMTX API on port %d (MediaMTX 1.0 or newer is needed)", api_port);
+			dstr_printf(status, obs_module_text("Source.Api.NotFoundPort"), api_port);
 		else
-			dstr_copy(status,
-				  "This server profile has no API URL, so there's no stream list (Manage servers…)");
+			dstr_copy(status, obs_module_text("Source.Api.NoApiUrl"));
 		break;
 	case MTX_API_REJECTED:
 	case MTX_API_BAD_RESPONSE:
-		dstr_copy(status, "The MediaMTX API sent an unexpected reply");
+		dstr_copy(status, obs_module_text("Source.Api.BadReply"));
 		break;
 	default:
-		dstr_printf(status, "Can't reach the MediaMTX API on port %d (turn it on with \"api: yes\")", api_port);
+		dstr_printf(status, obs_module_text("Source.Api.Unreachable"), api_port);
 		break;
 	}
 }
@@ -1020,7 +1028,7 @@ static void describe_stats(struct ctd_source *ctx, struct dstr *stats)
 		for (size_t i = 0; i < snapshot.count && !listed; i++)
 			listed = strcmp(snapshot.items[i].name, path) == 0;
 		if (snapshot.status == MTX_API_OK && *path && !listed)
-			dstr_cat(stats, " · Path not on server");
+			cat_text(stats, " · ", "Source.Stats.PathNotOnServer");
 		mtx_poll_snapshot_free(&snapshot);
 		mtx_poller_release(poller);
 	}
@@ -1036,7 +1044,10 @@ static void describe_stats(struct ctd_source *ctx, struct dstr *stats)
 						       (!*server_id || strcmp(x->server_id, server_id) == 0);
 		if (!mine)
 			continue;
-		dstr_catf(stats, "%s%s", listed_issue ? "; " : "\nIssues: ", x->title);
+		if (listed_issue)
+			dstr_catf(stats, "; %s", x->title);
+		else
+			cat_text(stats, "\n", "Source.Stats.Issues", x->title);
 		listed_issue = true;
 	}
 	bfree(name);
@@ -1045,95 +1056,94 @@ static void describe_stats(struct ctd_source *ctx, struct dstr *stats)
 	bfree(path);
 	if (!ctx->audio_only) {
 		const char *device = av_hwdevice_get_type_name((enum AVHWDeviceType)st.video_device);
-		dstr_catf(stats, " · video decoded on %s", device ? device : "the CPU");
+		cat_text(stats, " · ", "Source.Stats.DecodedOn",
+			 device ? device : obs_module_text("Source.Stats.TheCpu"));
 	}
 
 	pthread_mutex_lock(&ctx->input_mutex);
 	const struct ctd_input in = ctx->input;
 	pthread_mutex_unlock(&ctx->input_mutex);
-	dstr_cat(stats, "\nInput: ");
+	dstr_catf(stats, "\n%s ", obs_module_text("Source.Stats.Input"));
 	bool any = false;
 	if (!ctx->audio_only && *in.video_codec) {
 		dstr_cat(stats, in.video_codec);
 		if (in.width && in.height)
-			dstr_catf(stats, " %dx%d at %ld.%02ld fps", in.width, in.height, st.fps_x100 / 100,
-				  st.fps_x100 % 100);
+			cat_text(stats, " ", "Source.Stats.Video", in.width, in.height, st.fps_x100 / 100,
+				 st.fps_x100 % 100);
 		any = true;
 	}
 	if (*in.audio_codec) {
 		dstr_catf(stats, "%s%s", any ? " · " : "", in.audio_codec);
 		if (in.sample_rate)
-			dstr_catf(stats, " %g kHz, %d channel%s", in.sample_rate / 1000.0, in.channels,
-				  in.channels == 1 ? "" : "s");
+			cat_text(stats, " ", in.channels == 1 ? "Source.Stats.AudioOneChannel" : "Source.Stats.Audio",
+				 in.sample_rate / 1000.0, in.channels);
 		any = true;
 	}
 	if (!any)
-		dstr_cat(stats, "nothing yet");
+		dstr_cat(stats, obs_module_text("Source.Stats.NothingYet"));
 
 	pthread_mutex_lock(&ctx->settings_mutex);
 	const int drift_cap_ms = ctx->drift_cap_ms;
 	pthread_mutex_unlock(&ctx->settings_mutex);
 	/* R6: lateness, target and the soft correction being applied */
-	dstr_catf(stats, "\nLateness %ld ms", st.lateness_ms);
+	cat_text(stats, "\n", "Source.Stats.Lateness", st.lateness_ms);
 	if (st.target_set) {
 		const long ppm = st.correction_ppm;
-		dstr_catf(stats, ", target %ld ms, correcting %s%ld.%02ld%%", st.target_ms, ppm < 0 ? "-" : "+",
-			  labs(ppm) / 10000, labs(ppm) % 10000 / 100);
+		cat_text(stats, ", ", "Source.Stats.Target", st.target_ms, ppm < 0 ? "-" : "+", labs(ppm) / 10000,
+			 labs(ppm) % 10000 / 100);
 	}
-	dstr_catf(stats, " (snaps to live past %d ms)", drift_cap_ms);
-	dstr_catf(stats, "\nResyncs %ld · discontinuities %ld · reconnects %ld", st.resyncs, st.discontinuities,
-		  st.reconnects);
+	cat_text(stats, " ", "Source.Stats.SnapsPast", drift_cap_ms);
+	cat_text(stats, "\n", "Source.Stats.Resyncs", st.resyncs, st.discontinuities, st.reconnects);
 	if (ctx->audio_only)
-		dstr_catf(stats, "\nFrames: audio %ld", st.audio_frames);
+		cat_text(stats, "\n", "Source.Stats.FramesAudio", st.audio_frames);
 	else
-		dstr_catf(stats, "\nFrames: video %ld · audio %ld", st.video_frames, st.audio_frames);
+		cat_text(stats, "\n", "Source.Stats.Frames", st.video_frames, st.audio_frames);
 	if (st.gaps_filled)
-		dstr_catf(stats, "\nAudio gaps filled %ld (%ld ms)", st.gaps_filled, st.gap_ms_filled);
+		cat_text(stats, "\n", "Source.Stats.GapsFilled", st.gaps_filled, st.gap_ms_filled);
 	if (st.audio_lock_ppm)
-		dstr_catf(stats, "\nAudio locked to video, correcting %+ld ppm", st.audio_lock_ppm);
+		cat_text(stats, "\n", "Source.Stats.AudioLocked", st.audio_lock_ppm);
 	/* S5: the timecode, or why there is none */
 	const struct ctd_timecode *tc = &st.timecode;
 	const long timecode = os_atomic_load_long(&ctx->timecode_source);
 	if (tc->locked) {
-		dstr_catf(stats, "\nTimecode %02d:%02d:%02d%c%02d", tc->hours, tc->minutes, tc->seconds,
-			  tc->drop_frame ? ';' : ':', tc->frames);
+		cat_text(stats, "\n", "Source.Stats.Timecode", tc->hours, tc->minutes, tc->seconds,
+			 tc->drop_frame ? ';' : ':', tc->frames);
 		if (tc->fps > 0)
-			dstr_catf(stats, " at %.3g fps%s", tc->fps, tc->drop_frame ? " drop frame" : "");
+			cat_text(stats, " ",
+				 tc->drop_frame ? "Source.Stats.TimecodeFpsDrop" : "Source.Stats.TimecodeFps", tc->fps);
 		if (timecode != CTD_TIMECODE_SEI)
-			dstr_catf(stats, " · level %.0f dB · %.2f%% lost", tc->level_db, tc->error_percent);
+			cat_text(stats, " · ", "Source.Stats.TimecodeLevel", tc->level_db, tc->error_percent);
 		if (tc->user_bits)
-			dstr_catf(stats, " · user bits %08X", (unsigned)tc->user_bits);
+			cat_text(stats, " · ", "Source.Stats.UserBits", (unsigned)tc->user_bits);
 	} else if (timecode == CTD_TIMECODE_SEI) {
-		dstr_cat(stats, "\nTimecode: none in the video yet");
+		cat_text(stats, "\n", "Source.Stats.NoSei");
 	} else if (timecode) {
-		dstr_catf(stats, "\nTimecode: no LTC on channel %ld (level %.0f dB)", timecode, tc->level_db);
+		cat_text(stats, "\n", "Source.Stats.NoLtc", timecode, tc->level_db);
 	} else if (tc->detected_channel) {
-		dstr_catf(stats, "\nLTC found on channel %d: set it as the timecode input to keep it out of the mix",
-			  tc->detected_channel);
+		cat_text(stats, "\n", "Source.Stats.LtcFound", tc->detected_channel);
 	}
 	/* S15: the sync group */
 	const long sync_state = os_atomic_load_long(&ctx->sync_state);
 	if (sync_state >= 0) {
 		pthread_mutex_lock(&ctx->settings_mutex);
-		dstr_catf(stats, "\nSync group \"%s\": %s", ctx->sync_group ? ctx->sync_group : "",
-			  sync_state_name((enum sync_state)sync_state));
+		cat_text(stats, "\n", "Source.Stats.SyncGroup", ctx->sync_group ? ctx->sync_group : "",
+			 sync_state_name((enum sync_state)sync_state));
 		pthread_mutex_unlock(&ctx->settings_mutex);
 		if (os_atomic_load_bool(&ctx->sync_reference))
-			dstr_cat(stats, " (the reference)");
-		dstr_catf(stats, " · offset %.0f ms · group delay %ld ms",
-			  os_atomic_load_long(&ctx->sync_offset_x10) / 10.0, os_atomic_load_long(&ctx->sync_delay_ms));
+			cat_text(stats, " ", "Source.Stats.Reference");
+		cat_text(stats, " · ", "Source.Stats.SyncOffset", os_atomic_load_long(&ctx->sync_offset_x10) / 10.0,
+			 os_atomic_load_long(&ctx->sync_delay_ms));
 	}
 	/* S3 */
 	if (st.video_delay_ms || st.audio_delay_ms || st.video_delay_target_ms || st.audio_delay_target_ms) {
-		dstr_catf(stats, "\nDelay: video %ld ms, audio %ld ms", st.video_delay_ms, st.audio_delay_ms);
+		cat_text(stats, "\n", "Source.Stats.Delay", st.video_delay_ms, st.audio_delay_ms);
 		const bool limited = st.video_delay_limit_ms && st.video_delay_target_ms > st.video_delay_limit_ms;
 		const long video_to = limited ? st.video_delay_limit_ms : st.video_delay_target_ms;
 		if (labs(st.video_delay_ms - video_to) > 20 || st.audio_delay_ms != st.audio_delay_target_ms)
-			dstr_catf(stats, " (moving to %ld and %ld)", video_to, st.audio_delay_target_ms);
-		dstr_catf(stats, " · holding %.0f MB", st.delay_memory_mb);
+			cat_text(stats, " ", "Source.Stats.DelayMoving", video_to, st.audio_delay_target_ms);
+		cat_text(stats, " · ", "Source.Stats.DelayHolding", st.delay_memory_mb);
 		if (limited)
-			dstr_catf(stats, "\n⚠ Only %ld ms of video delay fits in the memory set at this resolution",
-				  st.video_delay_limit_ms);
+			cat_text(stats, "\n", "Source.Stats.DelayLimited", st.video_delay_limit_ms);
 	}
 }
 
@@ -1171,27 +1181,29 @@ static bool reset_audio_clicked(obs_properties_t *props, obs_property_t *propert
 static void add_audio_settings(obs_properties_t *props, struct ctd_source *ctx)
 {
 	obs_properties_t *audio = obs_properties_create();
-	obs_property_t *channels =
-		obs_properties_add_list(audio, S_CHANNELS, "Channels", OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-	obs_property_list_add_int(channels, "Stereo (as sent)", CTD_CHANNELS_STEREO);
-	obs_property_list_add_int(channels, "Left channel on both sides", CTD_CHANNELS_LEFT);
-	obs_property_list_add_int(channels, "Right channel on both sides", CTD_CHANNELS_RIGHT);
-	obs_property_list_add_int(channels, "Mono (both mixed)", CTD_CHANNELS_MONO);
-	obs_property_list_add_int(channels, "Swap left and right", CTD_CHANNELS_SWAP);
-	obs_property_list_add_int(channels, "Invert the right channel's polarity", CTD_CHANNELS_INVERT_RIGHT);
-	obs_properties_add_bool(audio, S_FILL_GAPS, "Fill short gaps in the audio with silence (no clicks)");
-	obs_properties_add_bool(audio, S_LOCK_AUDIO,
-				"Lock audio to video (nudges only the audio when it drifts from the picture)");
-	obs_property_t *rate = obs_properties_add_list(audio, S_RATE_OVERRIDE, "Incoming sample rate",
-						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-	obs_property_list_add_int(rate, "As the stream says", 0);
-	obs_property_list_add_int(rate, "Treat as 44.1 kHz", 44100);
-	obs_property_list_add_int(rate, "Treat as 48 kHz", 48000);
+	obs_property_t *channels = obs_properties_add_list(audio, S_CHANNELS, obs_module_text("Source.Prop.Channels"),
+							   OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(channels, obs_module_text("Source.Channels.Stereo"), CTD_CHANNELS_STEREO);
+	obs_property_list_add_int(channels, obs_module_text("Source.Channels.Left"), CTD_CHANNELS_LEFT);
+	obs_property_list_add_int(channels, obs_module_text("Source.Channels.Right"), CTD_CHANNELS_RIGHT);
+	obs_property_list_add_int(channels, obs_module_text("Source.Channels.Mono"), CTD_CHANNELS_MONO);
+	obs_property_list_add_int(channels, obs_module_text("Source.Channels.Swap"), CTD_CHANNELS_SWAP);
+	obs_property_list_add_int(channels, obs_module_text("Source.Channels.InvertRight"), CTD_CHANNELS_INVERT_RIGHT);
+	obs_properties_add_bool(audio, S_FILL_GAPS, obs_module_text("Source.Prop.FillGaps"));
+	obs_properties_add_bool(audio, S_LOCK_AUDIO, obs_module_text("Source.Prop.LockAudio"));
+	obs_property_t *rate = obs_properties_add_list(audio, S_RATE_OVERRIDE,
+						       obs_module_text("Source.Prop.SampleRate"), OBS_COMBO_TYPE_LIST,
+						       OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(rate, obs_module_text("Source.SampleRate.AsSent"), 0);
+	obs_property_list_add_int(rate, obs_module_text("Source.SampleRate.44100"), 44100);
+	obs_property_list_add_int(rate, obs_module_text("Source.SampleRate.48000"), 48000);
 	if (!ctx || !ctx->audio_only)
-		obs_properties_add_bool(audio, S_VIDEO_ONLY, "Video only (ignore the stream's audio)");
+		obs_properties_add_bool(audio, S_VIDEO_ONLY, obs_module_text("Source.Prop.VideoOnly"));
 	if (ctx)
-		obs_properties_add_button2(audio, "reset_audio", "Reset audio", reset_audio_clicked, ctx);
-	obs_properties_add_group(props, "audio_repair", "Audio repair", OBS_GROUP_NORMAL, audio);
+		obs_properties_add_button2(audio, "reset_audio", obs_module_text("Source.Prop.ResetAudio"),
+					   reset_audio_clicked, ctx);
+	obs_properties_add_group(props, "audio_repair", obs_module_text("Source.Group.AudioRepair"), OBS_GROUP_NORMAL,
+				 audio);
 }
 
 /* S16: the delays that undo the sync check's offset; false if there is no answer to apply */
@@ -1242,11 +1254,9 @@ static void add_sync_check(obs_properties_t *props, struct ctd_source *ctx)
 	if (!ctx || ctx->audio_only)
 		return; /* it needs the picture */
 	obs_properties_t *check = obs_properties_create();
-	obs_properties_add_text(check, "sync_check_how",
-				"Play the sync clip (CTD Hub ▸ Sync clip, a white flash and a beep once a second) on a "
-				"phone in front of the camera, then start the check: it watches and listens for 10 s.",
-				OBS_TEXT_INFO);
-	obs_properties_add_button2(check, "sync_check_start", "Start the sync check", sync_check_clicked, ctx);
+	obs_properties_add_text(check, "sync_check_how", obs_module_text("Source.SyncCheck.How"), OBS_TEXT_INFO);
+	obs_properties_add_button2(check, "sync_check_start", obs_module_text("Source.SyncCheck.Start"),
+				   sync_check_clicked, ctx);
 	struct ctd_engine_stats st = {0};
 	pthread_mutex_lock(&ctx->engine_mutex);
 	if (ctx->engine)
@@ -1255,21 +1265,20 @@ static void add_sync_check(obs_properties_t *props, struct ctd_source *ctx)
 	char result[256] = "";
 	switch (st.sync_check.state) {
 	case CTD_SYNC_CHECK_RUNNING:
-		snprintf(result, sizeof(result), "Checking… (press Refresh stats in 10 s)");
+		snprintf(result, sizeof(result), "%s", obs_module_text("Source.SyncCheck.Running"));
 		break;
 	case CTD_SYNC_CHECK_FAILED:
-		snprintf(result, sizeof(result),
-			 "Only %d flash and beep pairs: keep the clip in view, the sound up, and try again.",
-			 st.sync_check.pairs);
+		snprintf(result, sizeof(result), obs_module_text("Source.SyncCheck.Failed"), st.sync_check.pairs);
 		break;
 	case CTD_SYNC_CHECK_DONE:
 		if (fabs(st.sync_check.offset_ms) < 20)
-			snprintf(result, sizeof(result), "In sync: the sound and the picture are within %.0f ms.",
+			snprintf(result, sizeof(result), obs_module_text("Source.SyncCheck.InSync"),
 				 fabs(st.sync_check.offset_ms));
 		else
-			snprintf(result, sizeof(result), "The sound comes %.0f ms %s the picture (%d pairs).",
-				 fabs(st.sync_check.offset_ms), st.sync_check.offset_ms > 0 ? "after" : "before",
-				 st.sync_check.pairs);
+			snprintf(result, sizeof(result),
+				 obs_module_text(st.sync_check.offset_ms > 0 ? "Source.SyncCheck.After"
+									     : "Source.SyncCheck.Before"),
+				 fabs(st.sync_check.offset_ms), st.sync_check.pairs);
 		break;
 	default:
 		break;
@@ -1278,36 +1287,32 @@ static void add_sync_check(obs_properties_t *props, struct ctd_source *ctx)
 		obs_properties_add_text(check, "sync_check_result", result, OBS_TEXT_INFO);
 	if (st.sync_check.state == CTD_SYNC_CHECK_DONE && fabs(st.sync_check.offset_ms) >= 20)
 		obs_properties_add_button2(check, "sync_check_apply",
-					   st.sync_check.offset_ms > 0 ? "Delay the video to match"
-								       : "Delay the audio to match",
+					   obs_module_text(st.sync_check.offset_ms > 0 ? "Source.SyncCheck.DelayVideo"
+										       : "Source.SyncCheck.DelayAudio"),
 					   sync_check_apply_clicked, ctx);
-	obs_properties_add_group(props, "sync_check", "Sync check", OBS_GROUP_NORMAL, check);
+	obs_properties_add_group(props, "sync_check", obs_module_text("Source.Group.SyncCheck"), OBS_GROUP_NORMAL,
+				 check);
 }
 
 /* section 8.2: timecode input (S4) */
 static void add_timecode_settings(obs_properties_t *props, struct ctd_source *ctx)
 {
-	obs_property_t *list =
-		obs_properties_add_list(props, S_TIMECODE, "Timecode input", OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-	obs_property_list_add_int(list, "None", CTD_TIMECODE_NONE);
-	obs_property_list_add_int(list, "LTC on the left channel (taken out of the program audio)",
-				  CTD_TIMECODE_LTC_LEFT);
-	obs_property_list_add_int(list, "LTC on the right channel (taken out of the program audio)",
-				  CTD_TIMECODE_LTC_RIGHT);
+	obs_property_t *list = obs_properties_add_list(props, S_TIMECODE, obs_module_text("Source.Prop.Timecode"),
+						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(list, obs_module_text("Source.Timecode.None"), CTD_TIMECODE_NONE);
+	obs_property_list_add_int(list, obs_module_text("Source.Timecode.LtcLeft"), CTD_TIMECODE_LTC_LEFT);
+	obs_property_list_add_int(list, obs_module_text("Source.Timecode.LtcRight"), CTD_TIMECODE_LTC_RIGHT);
 	for (int channel = 3; channel <= 8; channel++) {
 		char label[64];
-		snprintf(label, sizeof(label), "LTC on channel %d", channel);
+		snprintf(label, sizeof(label), obs_module_text("Source.Timecode.LtcChannel"), channel);
 		obs_property_list_add_int(list, label, channel);
 	}
 	if (!ctx || !ctx->audio_only)
-		obs_property_list_add_int(list, "Timecode in the video (H.264/HEVC SEI)", CTD_TIMECODE_SEI);
-	obs_property_set_long_description(list,
-					  "Timecode lines this feed up with others in a sync group. LTC is a loud "
-					  "tone, so its channel never reaches the program audio.");
-	obs_property_t *group = obs_properties_add_text(props, S_SYNC_GROUP, "Sync group", OBS_TEXT_DEFAULT);
-	obs_property_set_long_description(group,
-					  "Sources with the same group name and working timecode are lined up, "
-					  "so the same moment is on screen and in the mix at once. Empty for none.");
+		obs_property_list_add_int(list, obs_module_text("Source.Timecode.Sei"), CTD_TIMECODE_SEI);
+	obs_property_set_long_description(list, obs_module_text("Source.Timecode.Description"));
+	obs_property_t *group = obs_properties_add_text(props, S_SYNC_GROUP, obs_module_text("Source.Prop.SyncGroup"),
+							OBS_TEXT_DEFAULT);
+	obs_property_set_long_description(group, obs_module_text("Source.SyncGroup.Description"));
 }
 
 /* section 8.1: manual delay (S1 to S3) */
@@ -1315,14 +1320,12 @@ static void add_delay_settings(obs_properties_t *props, struct ctd_source *ctx)
 {
 	obs_properties_t *delay = obs_properties_create();
 	if (!ctx || !ctx->audio_only)
-		obs_properties_add_int_slider(delay, S_VIDEO_DELAY_MS,
-					      "Delay video by (ms): when the sound comes first", 0, 2000, 10);
-	obs_properties_add_int_slider(delay, S_AUDIO_DELAY_MS, "Delay audio by (ms): when the lips come first", 0, 2000,
-				      10);
+		obs_properties_add_int_slider(delay, S_VIDEO_DELAY_MS, obs_module_text("Source.Prop.VideoDelay"), 0,
+					      2000, 10);
+	obs_properties_add_int_slider(delay, S_AUDIO_DELAY_MS, obs_module_text("Source.Prop.AudioDelay"), 0, 2000, 10);
 	if (!ctx || !ctx->audio_only)
-		obs_properties_add_int(delay, S_DELAY_CAP_MB, "Memory for delayed video (MB)", 64, 4096, 64);
-	obs_properties_add_group(props, "delay", "Delay (changes apply smoothly, without a jump)", OBS_GROUP_NORMAL,
-				 delay);
+		obs_properties_add_int(delay, S_DELAY_CAP_MB, obs_module_text("Source.Prop.DelayMemory"), 64, 4096, 64);
+	obs_properties_add_group(props, "delay", obs_module_text("Source.Group.Delay"), OBS_GROUP_NORMAL, delay);
 }
 
 /* -------------------------------------------------------------- callbacks -- */
@@ -1330,13 +1333,13 @@ static void add_delay_settings(obs_properties_t *props, struct ctd_source *ctx)
 static const char *ctd_get_name(void *unused)
 {
 	UNUSED_PARAMETER(unused);
-	return "CTD Live Source (SRT)";
+	return obs_module_text("CTDLiveSource");
 }
 
 static const char *ctd_audio_get_name(void *unused)
 {
 	UNUSED_PARAMETER(unused);
-	return "CTD Live Audio (SRT)";
+	return obs_module_text("CTDLiveAudioSource");
 }
 
 static bool string_changed(const char *old, const char *new_value)
@@ -1557,7 +1560,7 @@ static void source_renamed(void *data, calldata_t *cd)
 	WITH_ENGINE(ctx, ctd_engine_redraw_loss(ctx->engine));
 }
 
-/* "void reconnect()" on the source's proc handler: the CTD Hub dock's Reconnect (R17, H11) */
+/* "void reconnect()" on the source's proc handler: the CTD Relay · Feeds dock's Reconnect (R17, H11) */
 static void proc_reconnect(void *data, calldata_t *cd)
 {
 	UNUSED_PARAMETER(cd);
@@ -1860,19 +1863,15 @@ static bool loss_mode_modified(obs_properties_t *props, obs_property_t *property
 
 static void add_loss_settings(obs_properties_t *props, struct ctd_source *ctx)
 {
-	obs_property_t *mode = obs_properties_add_list(props, S_LOSS_MODE, "When the signal drops", OBS_COMBO_TYPE_LIST,
-						       OBS_COMBO_FORMAT_INT);
-	obs_property_list_add_int(mode, "Hold the last frame, then show a reconnecting card", CTD_LOSS_CARD);
-	obs_property_list_add_int(mode, "Hold the last frame", CTD_LOSS_HOLD);
-	obs_property_list_add_int(mode, "See-through (show what's underneath in the scene)", CTD_LOSS_TRANSPARENT);
+	obs_property_t *mode = obs_properties_add_list(props, S_LOSS_MODE, obs_module_text("Source.Prop.LossMode"),
+						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(mode, obs_module_text("Source.Loss.Card"), CTD_LOSS_CARD);
+	obs_property_list_add_int(mode, obs_module_text("Source.Loss.Hold"), CTD_LOSS_HOLD);
+	obs_property_list_add_int(mode, obs_module_text("Source.Loss.Transparent"), CTD_LOSS_TRANSPARENT);
 	obs_property_set_modified_callback(mode, loss_mode_modified);
-	obs_properties_add_int_slider(props, S_HOLD_MS, "Hold the last frame for (ms)", 0, 10000, 100);
-	obs_properties_add_path(
-		props, S_LOSS_IMAGE, "Reconnecting card picture or video (optional; blank for the built-in card)",
-		OBS_PATH_FILE,
-		"Pictures and videos (*.png *.jpg *.jpeg *.bmp *.gif *.webp *.mp4 *.m4v *.mov *.mkv *.webm);;"
-		"Pictures (*.png *.jpg *.jpeg *.bmp *.gif *.webp);;Videos (*.mp4 *.m4v *.mov *.mkv *.webm)",
-		NULL);
+	obs_properties_add_int_slider(props, S_HOLD_MS, obs_module_text("Source.Prop.HoldMs"), 0, 10000, 100);
+	obs_properties_add_path(props, S_LOSS_IMAGE, obs_module_text("Source.Prop.LossImage"), OBS_PATH_FILE,
+				obs_module_text("Source.LossImage.Filter"), NULL);
 	show_loss_settings(props, ctx ? (int)os_atomic_load_long(&ctx->loss_mode) : CTD_LOSS_CARD);
 }
 
@@ -1917,27 +1916,30 @@ static obs_properties_t *ctd_properties(void *data)
 	obs_properties_t *props = obs_properties_create();
 
 	/* H4: a saved server profile, or this source's own address */
-	obs_property_t *server =
-		obs_properties_add_list(props, S_SERVER, "Server", OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(server, "Custom (enter the address below)", "");
+	obs_property_t *server = obs_properties_add_list(props, S_SERVER, obs_module_text("Source.Prop.Server"),
+							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(server, obs_module_text("Source.Server.Custom"), "");
 	for (size_t i = 0; i < servers_count(); i++) {
 		struct ctd_server s;
 		if (!servers_get_index(i, &s))
 			continue;
 		struct dstr label = {0};
-		dstr_printf(&label, "%s (%s)%s", s.name, s.host, s.is_default ? " · default" : "");
+		dstr_printf(&label, "%s (%s)", s.name, s.host);
+		if (s.is_default)
+			dstr_catf(&label, " · %s", obs_module_text("Servers.DefaultTag"));
 		obs_property_list_add_string(server, label.array, s.id);
 		dstr_free(&label);
 		ctd_server_free(&s);
 	}
 	obs_property_set_modified_callback(server, server_modified);
-	obs_properties_add_button2(props, "manage_servers", "Manage servers…", manage_servers_clicked, ctx);
+	obs_properties_add_button2(props, "manage_servers", obs_module_text("Source.Prop.ManageServers"),
+				   manage_servers_clicked, ctx);
 
-	obs_properties_add_text(props, S_HOST, "Server address (the machine running MediaMTX)", OBS_TEXT_DEFAULT);
-	obs_properties_add_int(props, S_PORT, "SRT port", 1024, 65535, 1);
+	obs_properties_add_text(props, S_HOST, obs_module_text("Source.Prop.Host"), OBS_TEXT_DEFAULT);
+	obs_properties_add_int(props, S_PORT, obs_module_text("Source.Prop.SrtPort"), 1024, 65535, 1);
 
 	/* editable: a path that isn't live (or listed) yet can still be typed */
-	obs_property_t *paths = obs_properties_add_list(props, S_PATH, "Stream (pick one, or type a path)",
+	obs_property_t *paths = obs_properties_add_list(props, S_PATH, obs_module_text("Source.Prop.Path"),
 							OBS_COMBO_TYPE_EDITABLE, OBS_COMBO_FORMAT_STRING);
 	if (ctx) {
 		pthread_mutex_lock(&ctx->settings_mutex);
@@ -1950,7 +1952,8 @@ static obs_properties_t *ctd_properties(void *data)
 		pthread_mutex_unlock(&ctx->api_mutex);
 		obs_properties_add_text(props, "api_status", status.array, OBS_TEXT_INFO);
 		dstr_free(&status);
-		obs_properties_add_button2(props, "api_refresh", "Refresh stream list", api_refresh_clicked, ctx);
+		obs_properties_add_button2(props, "api_refresh", obs_module_text("Source.Prop.RefreshStreams"),
+					   api_refresh_clicked, ctx);
 
 		/* the list loads in the background and reloads this window when it arrives */
 		request_api_refresh(ctx, false);
@@ -1959,43 +1962,38 @@ static obs_properties_t *ctd_properties(void *data)
 	/* an audio-only source has no picture to manage */
 	if (!ctx || !ctx->audio_only) {
 		add_loss_settings(props, ctx);
-		obs_property_t *decoder = obs_properties_add_list(props, S_DECODER, "Video decoding",
+		obs_property_t *decoder = obs_properties_add_list(props, S_DECODER,
+								  obs_module_text("Source.Prop.Decoder"),
 								  OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-		obs_property_list_add_int(decoder, "Auto (graphics card, or the CPU if it can't)", CTD_DECODER_AUTO);
-		obs_property_list_add_int(decoder, "CPU only", CTD_DECODER_SOFTWARE);
-		obs_property_list_add_int(decoder, "Graphics card (keeps retrying it after a failure)",
-					  CTD_DECODER_HARDWARE);
+		obs_property_list_add_int(decoder, obs_module_text("Source.Decoder.Auto"), CTD_DECODER_AUTO);
+		obs_property_list_add_int(decoder, obs_module_text("Source.Decoder.Cpu"), CTD_DECODER_SOFTWARE);
+		obs_property_list_add_int(decoder, obs_module_text("Source.Decoder.Hardware"), CTD_DECODER_HARDWARE);
 	}
 
-	obs_properties_add_int_slider(props, S_LATENCY_MS, "SRT latency (ms)", 20, 2000, 10);
-	obs_properties_add_int_slider(props, S_DRIFT_CAP_MS, "Max drift before snapping to live (ms)", 100, 5000, 50);
-	obs_properties_add_bool(props, S_SOFT_CORRECTION,
-				"Soft clock correction (steer drift back gently, so it rarely needs a snap)");
-	obs_properties_add_int_slider(props, S_RECONNECT_S, "Reconnect delay (s)", 1, 30, 1);
-	obs_properties_add_int_slider(props, S_STALL_S, "Reconnect after stalled for (s)", 2, 60, 1);
-	obs_properties_add_bool(props, S_DISCONNECT_INACTIVE,
-				"Disconnect when not in an active scene (saves bandwidth; reconnects when shown)");
-	obs_properties_add_bool(
-		props, S_AUTO_FIX,
-		"Auto-fix: apply safe fixes for this source's issues by itself (graphics-card decoding, a "
-		"higher SRT latency), and log them");
+	obs_properties_add_int_slider(props, S_LATENCY_MS, obs_module_text("Source.Prop.Latency"), 20, 2000, 10);
+	obs_properties_add_int_slider(props, S_DRIFT_CAP_MS, obs_module_text("Source.Prop.DriftCap"), 100, 5000, 50);
+	obs_properties_add_bool(props, S_SOFT_CORRECTION, obs_module_text("Source.Prop.SoftCorrection"));
+	obs_properties_add_int_slider(props, S_RECONNECT_S, obs_module_text("Source.Prop.ReconnectDelay"), 1, 30, 1);
+	obs_properties_add_int_slider(props, S_STALL_S, obs_module_text("Source.Prop.Stall"), 2, 60, 1);
+	obs_properties_add_bool(props, S_DISCONNECT_INACTIVE, obs_module_text("Source.Prop.DisconnectInactive"));
+	obs_properties_add_bool(props, S_AUTO_FIX, obs_module_text("Source.Prop.AutoFix"));
 	add_audio_settings(props, ctx);
 	add_delay_settings(props, ctx);
 	add_timecode_settings(props, ctx);
 	add_sync_check(props, ctx);
 
 	obs_properties_t *api = obs_properties_create();
-	obs_properties_add_int(api, S_API_PORT, "API port", 1, 65535, 1);
-	obs_properties_add_text(api, S_API_USER, "API username (if your server needs one)", OBS_TEXT_DEFAULT);
-	obs_properties_add_text(api, S_API_PASS, "API password", OBS_TEXT_PASSWORD);
+	obs_properties_add_int(api, S_API_PORT, obs_module_text("Source.Prop.ApiPort"), 1, 65535, 1);
+	obs_properties_add_text(api, S_API_USER, obs_module_text("Source.Prop.ApiUser"), OBS_TEXT_DEFAULT);
+	obs_properties_add_text(api, S_API_PASS, obs_module_text("Source.Prop.ApiPass"), OBS_TEXT_PASSWORD);
 
 	/* changing the server is opt-in (SPEC H8) */
-	obs_property_t *allow = obs_properties_add_bool(api, S_ALLOW_EDITS,
-							"Allow this source to create and delete paths on the server");
+	obs_property_t *allow = obs_properties_add_bool(api, S_ALLOW_EDITS, obs_module_text("Source.Prop.AllowEdits"));
 	obs_property_set_modified_callback(allow, allow_edits_modified);
-	obs_properties_add_text(api, S_NEW_PATH, "New path name", OBS_TEXT_DEFAULT);
-	obs_properties_add_bool(api, S_NEW_PATH_SLATE, "Show an offline picture on it while nothing is publishing");
-	obs_properties_add_button2(api, "create_path", "Create path", create_path_clicked, ctx);
+	obs_properties_add_text(api, S_NEW_PATH, obs_module_text("Source.Prop.NewPath"), OBS_TEXT_DEFAULT);
+	obs_properties_add_bool(api, S_NEW_PATH_SLATE, obs_module_text("Source.Prop.NewPathSlate"));
+	obs_properties_add_button2(api, "create_path", obs_module_text("Source.Prop.CreatePath"), create_path_clicked,
+				   ctx);
 
 	bool allow_edits = false;
 	if (ctx) {
@@ -2007,16 +2005,16 @@ static obs_properties_t *ctd_properties(void *data)
 		const bool armed = ctx->delete_armed_path && os_gettime_ns() - ctx->delete_armed_ns < DELETE_CONFIRM_NS;
 		struct dstr label = {0};
 		if (armed)
-			dstr_printf(&label, "Click again to delete \"%s\"", ctx->delete_armed_path);
+			dstr_printf(&label, obs_module_text("Source.Path.ConfirmDelete"), ctx->delete_armed_path);
 		else
-			dstr_copy(&label, "Delete the path picked in the Stream list");
+			dstr_copy(&label, obs_module_text("Source.Path.Delete"));
 		if (ctx->path_op_message)
 			obs_properties_add_text(api, "path_op_status", ctx->path_op_message, OBS_TEXT_INFO);
 		pthread_mutex_unlock(&ctx->api_mutex);
 		obs_properties_add_button2(api, "delete_path", label.array, delete_path_clicked, ctx);
 		dstr_free(&label);
 	}
-	obs_properties_add_group(props, "api", "MediaMTX server (stream list and paths)", OBS_GROUP_NORMAL, api);
+	obs_properties_add_group(props, "api", obs_module_text("Source.Group.Api"), OBS_GROUP_NORMAL, api);
 	show_path_edits(api, allow_edits);
 	if (ctx) {
 		obs_data_t *settings = obs_source_get_settings(ctx->source);
@@ -2029,8 +2027,10 @@ static obs_properties_t *ctd_properties(void *data)
 		describe_stats(ctx, &stats);
 		obs_properties_add_text(props, "stats", stats.array, OBS_TEXT_INFO);
 		dstr_free(&stats);
-		obs_properties_add_button2(props, "stats_refresh", "Refresh stats", stats_refresh_clicked, ctx);
-		obs_properties_add_button2(props, "reconnect_now", "Reconnect now", reconnect_now_clicked, ctx);
+		obs_properties_add_button2(props, "stats_refresh", obs_module_text("Source.Prop.RefreshStats"),
+					   stats_refresh_clicked, ctx);
+		obs_properties_add_button2(props, "reconnect_now", obs_module_text("Source.Prop.ReconnectNow"),
+					   reconnect_now_clicked, ctx);
 	}
 	return props;
 }
