@@ -342,7 +342,7 @@ static bool scene_healthy(const struct fo_state *st, const struct fo_scene *scen
 
 /* the watched source on this scene that has been down longest (past the delay), or NULL */
 static const struct fo_source_state *down_on(const struct fo_state *st, const struct fo_config *c,
-					      const struct fo_scene *scene, uint64_t now_ms)
+					     const struct fo_scene *scene, uint64_t now_ms)
 {
 	const struct fo_source_state *worst = NULL;
 	for (size_t i = 0; i < scene->source_count; i++) {

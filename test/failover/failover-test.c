@@ -150,7 +150,8 @@ static const char *const CLUB_SOURCES[] = {"Club cam"};
 static const char *const DJ_SOURCES[] = {"DJ cam"};
 static const char *const WIDE_SOURCES[] = {"Crowd cam", "Roof cam"};
 static const struct fo_scene SCENES[] = {
-	{"Club", CLUB_SOURCES, 1}, {"DJ", DJ_SOURCES, 1}, {"Wide", WIDE_SOURCES, 2}, {"BRB", NULL, 0}, {"Logo", NULL, 0},
+	{"Club", CLUB_SOURCES, 1}, {"DJ", DJ_SOURCES, 1}, {"Wide", WIDE_SOURCES, 2},
+	{"BRB", NULL, 0},          {"Logo", NULL, 0},
 };
 #define SCENE_COUNT (sizeof(SCENES) / sizeof(SCENES[0]))
 
@@ -235,10 +236,10 @@ static int run(uint64_t ms)
 static void test_dead_feed_on_program(void)
 {
 	start("Club");
-	CHECK(run(10000) == 0); /* all is well */
-	show.signal[0] = false; /* Club cam drops */
-	CHECK(tick(500) == FO_NONE); /* the plugin sees it */
-	CHECK(tick(1500) == FO_NONE); /* 1.5 s down: a blip so far */
+	CHECK(run(10000) == 0);        /* all is well */
+	show.signal[0] = false;        /* Club cam drops */
+	CHECK(tick(500) == FO_NONE);   /* the plugin sees it */
+	CHECK(tick(1500) == FO_NONE);  /* 1.5 s down: a blip so far */
 	CHECK(tick(500) == FO_SWITCH); /* 2 s: gone */
 	CHECK_STR(show.program, "BRB");
 	CHECK_STR(show.last.from, "Club");

@@ -33,8 +33,12 @@ cut through OBS: it uses the current transition, and in Studio Mode it moves pro
 - Move anywhere else after a failover and nothing is "returned" later.
 - **Go back when the feed has been healthy** (off by default) returns to the original scene once the feed that went
   down has been healthy for the time you set (5 s) and nothing else in that scene is dead.
+- If you cut somewhere else in the moment between the plugin deciding and the switch landing, your cut stands: the
+  switch is dropped (and logged), not made on top of yours.
 - For 15 s after OBS starts or the scene collection changes, nothing is switched: feeds need a moment to connect.
 - After a switch, the next one is at least 3 s away.
+- While failover is off, no feed is read. Turning it on starts every feed's timer from zero, so nothing switches
+  before a feed has been dead for the full wait.
 
 ## Who hears about it
 

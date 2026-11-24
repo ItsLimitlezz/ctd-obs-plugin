@@ -70,9 +70,9 @@ struct fo_rule {
 
 struct fo_config {
 	bool enabled;
-	int delay_ms;     /* how long a source must be down before program moves */
-	int frozen_ms;    /* for rules with on_frozen */
-	int tolerance;    /* for saved pictures */
+	int delay_ms;  /* how long a source must be down before program moves */
+	int frozen_ms; /* for rules with on_frozen */
+	int tolerance; /* for saved pictures */
 	bool return_when_back;
 	int return_after_ms; /* healthy this long before going back */
 	bool watch_all;      /* sources without a rule are watched with the defaults (signal lost, colour bars) */

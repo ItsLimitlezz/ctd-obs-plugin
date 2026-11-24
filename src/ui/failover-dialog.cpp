@@ -431,7 +431,8 @@ extern "C" void ctd_failover_dialog_register(void)
 	/* CTD OBS registers ctd_menu_failover_available before modules load when its CTD menu has this window; a CTD
 	 * OBS from before that, and stock OBS, get it under Tools */
 	calldata_t cd = {0};
-	const bool ctdMenu = proc_handler_call(ph, "ctd_menu_failover_available", &cd) && calldata_bool(&cd, "available");
+	const bool ctdMenu = proc_handler_call(ph, "ctd_menu_failover_available", &cd) &&
+			     calldata_bool(&cd, "available");
 	calldata_free(&cd);
 	if (!ctdMenu)
 		obs_frontend_add_tools_menu_item(obs_module_text("Failover.MenuItem"), openFromMenu, nullptr);

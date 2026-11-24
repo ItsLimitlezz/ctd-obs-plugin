@@ -4,9 +4,12 @@
  * Threads:
  *   - "ctd-failover" checks twice a second: it reads every CTD Live Source's state (and its picture, for the sources
  *     that match pictures), which watched sources each scene shows, and the program scene; then asks the rules what to
- *     do. Only this thread touches `state`.
+ *     do. Only this thread touches `state`. Inside obs_enum_sources (OBS's global sources lock) it only takes a
+ *     reference to each CTD Live Source; their state is read after the lock is released. While failover is off it
+ *     reads no feeds at all, only what is on program (for the issues).
  *   - a switch is made on the UI thread (obs_queue_task), through the frontend, so it uses the current transition
- *     and, in Studio Mode, moves program and leaves preview alone.
+ *     and, in Studio Mode, moves program and leaves preview alone. The task looks at program again first: if the
+ *     operator cut somewhere else after the check, or the request is stale, nothing is switched or announced.
  *   - `config`, the status and the on-program list are shared, under `lock`. The lock is never held while calling
  *     into libobs.
  */
@@ -52,9 +55,10 @@ static struct {
 	pthread_t thread;
 	os_event_t *stop;
 	bool running;
-	bool lock_ready; /* the lock outlives a failed start: readers may still come */
+	bool lock_ready;       /* the lock outlives a failed start: readers may still come */
 	volatile long reset;   /* forget what was seen and wait out the start-up grace */
 	volatile long closing; /* OBS is exiting: no more switches */
+	volatile long skipped; /* the UI thread did not make the last switch asked for: forget it */
 
 	/* under lock */
 	struct fo_config config;
@@ -254,19 +258,30 @@ static bool read_grid(obs_source_t *source, uint8_t grid[FO_GRID_BYTES])
 }
 
 struct collected {
+	DARRAY(obs_source_t *) sources; /* references taken under OBS's sources lock, read after it */
 	DARRAY(struct sampled) samples;
 	DARRAY(struct scene_view) scenes;
 	const struct fo_config *config;
 };
 
+/* inside obs_enum_sources (OBS's global sources lock): a reference and nothing else */
 static bool collect_source(void *param, obs_source_t *source)
 {
 	struct collected *all = param;
 	if (!is_live_source(source))
 		return true;
+	obs_source_t *ref = obs_source_get_ref(source);
+	if (ref)
+		da_push_back(all->sources, &ref);
+	return true;
+}
+
+/* after the lock: the feed's state, and its picture when a rule looks at pictures */
+static void sample_source(struct collected *all, obs_source_t *source)
+{
 	const char *name = obs_source_get_name(source);
 	if (!name || !*name)
-		return true;
+		return;
 	calldata_t cd = {0};
 	if (proc_handler_call(obs_source_get_proc_handler(source), "get_feed", &cd)) {
 		obs_data_t *json = obs_data_create_from_json(calldata_string(&cd, "json"));
@@ -290,7 +305,6 @@ static bool collect_source(void *param, obs_source_t *source)
 		}
 	}
 	calldata_free(&cd);
-	return true;
 }
 
 struct walk {
@@ -375,24 +389,6 @@ bool failover_capture_picture(const char *source_name, uint8_t out[FO_GRID_BYTES
 
 /* ------------------------------------------------------------- switching -- */
 
-struct switch_request {
-	char to[FO_NAME_MAX];
-};
-
-/* UI thread: through the frontend, so it is the operator's own kind of cut (current transition; in Studio Mode
- * program moves and preview stays) */
-static void switch_task(void *param)
-{
-	struct switch_request *request = param;
-	if (!os_atomic_load_long(&fo.closing)) {
-		obs_source_t *scene = obs_get_source_by_name(request->to);
-		if (scene && obs_source_is_scene(scene))
-			obs_frontend_set_current_scene(scene);
-		obs_source_release(scene);
-	}
-	bfree(request);
-}
-
 static const char *title_key(const struct fo_decision *d)
 {
 	if (d->action == FO_RETURN)
@@ -435,6 +431,48 @@ static void announce(const struct fo_decision *d)
 	dstr_free(&title);
 }
 
+#define SWITCH_STALE_MS FO_COOLDOWN_MS /* a switch the UI thread gets to later than this is no longer the right one */
+
+struct switch_request {
+	struct fo_decision decision;
+	uint64_t queued_ms;
+};
+
+/* UI thread: through the frontend, so it is the operator's own kind of cut (current transition; in Studio Mode
+ * program moves and preview stays). The operator wins: if program is no longer the scene the check saw (they cut
+ * somewhere else in the meantime), the scene is gone, or the request waited too long, nothing is switched or
+ * announced, and the failover thread forgets the switch and looks again. */
+static void switch_task(void *param)
+{
+	struct switch_request *request = param;
+	const struct fo_decision *d = &request->decision;
+	if (!os_atomic_load_long(&fo.closing)) {
+		char program[FO_NAME_MAX];
+		program_scene(program, sizeof(program));
+		obs_source_t *scene = obs_get_source_by_name(d->to);
+		const uint64_t waited = now_ms() - request->queued_ms;
+		bool switched = false;
+		if (strcmp(program, d->from) != 0)
+			blog(LOG_INFO, "[CTD] failover: not switching to \"%s\": program moved to \"%s\" first", d->to,
+			     program);
+		else if (waited > SWITCH_STALE_MS)
+			blog(LOG_INFO, "[CTD] failover: not switching to \"%s\": the request waited %llu ms", d->to,
+			     (unsigned long long)waited);
+		else if (!scene || !obs_source_is_scene(scene))
+			blog(LOG_INFO, "[CTD] failover: not switching to \"%s\": the scene is gone", d->to);
+		else
+			switched = true;
+		if (switched) {
+			obs_frontend_set_current_scene(scene);
+			announce(d);
+		} else {
+			os_atomic_set_long(&fo.skipped, 1);
+		}
+		obs_source_release(scene);
+	}
+	bfree(request);
+}
+
 /* ---------------------------------------------------------------- thread -- */
 
 static void check(void)
@@ -447,12 +485,24 @@ static void check(void)
 		fo_state_init(&fo.state);
 		fo_state_quiet(&fo.state, now, STARTUP_GRACE_MS);
 	}
+	if (os_atomic_set_long(&fo.skipped, 0))
+		fo_state_quiet(&fo.state, now,
+			       0); /* the last switch wasn't made: nothing to go back to or stand down for */
 
 	struct collected all;
+	da_init(all.sources);
 	da_init(all.samples);
 	da_init(all.scenes);
 	all.config = &fo.tick_config;
-	obs_enum_sources(collect_source, &all);
+	/* off: no feed is read (and the timers start over, so turning it on never acts before a full wait) */
+	if (fo.tick_config.enabled) {
+		obs_enum_sources(collect_source, &all);
+		for (size_t i = 0; i < all.sources.num; i++) {
+			sample_source(&all, all.sources.array[i]);
+			obs_source_release(all.sources.array[i]);
+		}
+		da_free(all.sources);
+	}
 	obs_enum_scenes(collect_scene, &all);
 	char program[FO_NAME_MAX];
 	program_scene(program, sizeof(program));
@@ -489,10 +539,10 @@ static void check(void)
 	fo_decide(&fo.state, &fo.tick_config, &world, now, &decision);
 	if (decision.action != FO_NONE && !os_atomic_load_long(&fo.closing)) {
 		struct switch_request *request = bzalloc(sizeof(*request));
-		snprintf(request->to, sizeof(request->to), "%s", decision.to);
-		obs_queue_task(OBS_TASK_UI, switch_task, request, false);
+		request->decision = decision;
+		request->queued_ms = now;
 		fo_committed(&fo.state, &decision, now);
-		announce(&decision);
+		obs_queue_task(OBS_TASK_UI, switch_task, request, false); /* announced there, once it is made */
 	}
 
 	da_free(samples);
@@ -552,6 +602,7 @@ void failover_start(void)
 	fo_state_init(&fo.state);
 	os_atomic_set_long(&fo.reset, 1);
 	os_atomic_set_long(&fo.closing, 0);
+	os_atomic_set_long(&fo.skipped, 0);
 	if (os_event_init(&fo.stop, OS_EVENT_TYPE_MANUAL) != 0)
 		return;
 	obs_frontend_add_event_callback(frontend_event, NULL);
