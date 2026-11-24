@@ -1610,7 +1610,7 @@ private:
 					already++;
 					continue;
 				}
-				const std::string added_name = addOverlaySource(obsScene, overlay, scene.id);
+				const std::string added_name = ov::addSource(obsScene, overlay, scene.id);
 				if (added_name.empty())
 					continue;
 				added++;
