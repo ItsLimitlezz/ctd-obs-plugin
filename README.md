@@ -257,6 +257,13 @@ talks to for everything after OBS:
    streaming; the key is shown masked). In CTD OBS it also sets the built-in vertical canvas's stream (a "CTD
    Relay" output) to the profile's vertical feed, so both feeds go live together. In stock OBS the vertical feed's
    URL is copied for Aitum Vertical instead.
+   It also makes the stream one CTD Relay can pass on: CTD Relay sends streams to the platforms unchanged, and they
+   need **H.264** video and **AAC** audio. An HEVC or AV1 encoder (say, from an imported profile) is switched to
+   this computer's hardware H.264 encoder (Apple VideoToolbox on a Mac; NVENC, AMF or Quick Sync on Windows), else
+   x264, with a 2 s keyframe interval and CBR; your bitrate, resolution and frame rate stay. The dock says when it
+   switched. A **pre-flight check** in the dock, and in the log when a stream starts, warns when a stream to CTD
+   Relay is HEVC or AV1 or has no AAC audio, with **Fix it** to make the same change (not while streaming). In CTD
+   OBS the change applies at once; stock OBS needs a restart to load the new encoder.
 5. **Overlays** lists the profile's overlays from CTD Overlay. **Add to current scene** creates a browser source at
    the overlay's size. After a profile change, **Switch existing to this profile** points those sources at the new
    profile's matching overlays (same slot and canvas), so the scenes carry over. Nothing is ever deleted.
@@ -291,6 +298,25 @@ plugin doesn't follow redirects (the token would go along): use the address a se
 
 The connection is saved in the plugin's own settings, not in the scene collection. CTD Relay being down never
 affects the video sources.
+
+### CTD Producer dock
+
+**Docks ▸ CTD Producer** (also **Open CTD Producer** in the CTD Relay dock, and the CTD menu in CTD OBS) is what a
+producer watches during a show. It uses the CTD Relay dock's connection and profile and is read-only:
+
+- **Viewers:** every platform added up, and one chip per destination: its platform, the canvas that feeds it
+  (landscape or vertical), its state (live, starting, recovering, waiting for feed, down, offline) and its own count.
+  A platform that doesn't report a count shows a dash and is left out of the total; it is never counted as 0. The
+  numbers follow CTD Relay live.
+- **Chat:** one list with every platform's chat in the order it arrived, each line with its platform's badge and
+  the author in their colour. Platform notices (subs, raids) are in cyan, highlighted or paid messages are marked,
+  "joined" lines are dimmed. The chips above the list show or hide a platform or the joined lines (kept between
+  sessions). Messages a moderator removes disappear here too. It keeps the last 500 lines.
+- Scroll up to read back: the list holds still and a **↓ N new messages** button takes you to the newest again.
+- If the connection was approved in CTD Relay without **Read chat** or **Read status**, the dock says so and offers
+  **Pair again to show chat**: approve the new code in CTD Relay (the current connection keeps working meanwhile).
+
+Emotes and emoji are shown as text. Sending chat is not part of it yet.
 
 ### Server profiles
 
@@ -492,6 +518,8 @@ opens a draft release with the packages attached.
 - `src/obs/`: the OBS source around it: settings, the properties window, the reconnecting card, and the MediaMTX
   stream list.
 - `src/ui/` and `src/multistream.c`: the CTD Relay dock and its client.
+- `src/ui/producer-dock.cpp` and `src/ui/producer-core.c`: the CTD Producer dock. Its logic (viewer totals, the
+  merged chat's ring) is plain C with no OBS or Qt in it, tested by `test/producer`.
 - `tools/ctd-live-probe/`: the engine on the command line.
 - `test/`: the test harness.
 
