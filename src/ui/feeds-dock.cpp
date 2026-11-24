@@ -54,6 +54,7 @@
 #include "../obs/sync-groups.h"
 #include "../obs/servers.h"
 #include "icons.hpp"
+#include "../obs/ctd-settings.h"
 
 namespace {
 
@@ -354,16 +355,12 @@ private:
 
 	/* ------------------------------------------------------- H13 auto-add -- */
 
-	/* feeds.json; before the dock was renamed it was hub.json, which is copied once (and left for an older plugin) */
+	/* feeds.json, in CTD OBS's CTD settings folder or the plugin's own config folder (ctd-settings.c, which makes the
+	 * folder). Before the dock was renamed it was hub.json, which is copied once (and left for an older plugin). */
 	static char *feedsConfigFile()
 	{
-		char *dir = obs_module_config_path("");
-		if (dir) {
-			os_mkdirs(dir);
-			bfree(dir);
-		}
-		char *file = obs_module_config_path("feeds.json");
-		char *old = obs_module_config_path("hub.json");
+		char *file = ctd_settings_path("feeds.json");
+		char *old = ctd_settings_path("hub.json");
 		if (file && old && !os_file_exists(file) && os_file_exists(old)) {
 			if (os_copyfile(old, file) == 0)
 				blog(LOG_INFO, "[CTD] feeds: settings moved from hub.json to feeds.json");
