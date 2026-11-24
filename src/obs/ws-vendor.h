@@ -2,7 +2,8 @@
  * The obs-websocket vendor "ctd" (SPEC I1 to I3).
  *
  * Requests (CallVendorRequest, vendorName "ctd"): GetServers, GetStreams {serverId?}, GetFeeds, GetFeed {sourceName},
- * ReconnectFeed {sourceName}, GetIssues. Events (VendorEvent): FeedStateChanged {sourceName, path, state, previous},
+ * ReconnectFeed {sourceName}, GetIssues, KeepScenesLive {clientId, scenes, leaseSeconds?}, ReleaseScenesLive {clientId},
+ * GetKeepScenesLive (src/obs/keep-live.h). Events (VendorEvent): FeedStateChanged {sourceName, path, state, previous},
  * IssueRaised and IssueCleared {id, rule, severity, source, path, title, cause, firstSeen}.
  */
 
