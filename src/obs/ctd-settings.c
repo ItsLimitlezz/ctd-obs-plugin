@@ -1,9 +1,10 @@
 /*
  * Where the plugin keeps its settings, and CTD OBS's one CTD settings folder (integration gap 17).
  *
- * Settings files: multistream.json (CTD Relay: address, pairing, profile), servers.json (CTD Hub servers), hub.json
- * (CTD Hub dock) and sync-groups.json, each with its .bak. The Show Profiles store and the LUT cache are data, not
- * settings, and stay in the plugin's own config folder.
+ * Settings files: multistream.json (CTD Relay: address, pairing, profile), servers.json (feed servers), feeds.json
+ * (the CTD Relay · Feeds dock; hub.json before the dock was renamed) and sync-groups.json, each with its .bak. The
+ * Show Profiles store, the LUT cache and the Producer dock's view choices are not moved: they stay in the plugin's own
+ * config folder.
  *
  * In CTD OBS, core answers `ctd_config_dir(out string path)` with <config>/ctd-obs/ctd/, and the settings live
  * there. The first time, the files are COPIED there from the plugin's own config folder (plugin_config/ctd-live-source/),
@@ -15,11 +16,11 @@
  *
  * Profile ▸ Export / Import in CTD OBS carry the CTD settings, without secrets (procs, UI thread):
  *   void ctd_settings_export(in string dir, out bool success, out string message)
- *       relay.json (CTD Relay address and profile; no pairing token), servers.json (CTD Hub servers without
- *       passwords, tokens, passphrases or webhook URLs), hub.json, sync-groups.json.
+ *       relay.json (CTD Relay address and profile; no pairing token), servers.json (feed servers without
+ *       passwords, tokens, passphrases or webhook URLs), feeds.json (and hub.json, if there is one), sync-groups.json.
  *   void ctd_settings_import(in string dir, out bool success, out string message)
- *       Adds the Hub servers this CTD OBS doesn't have (same ids, passwords to be entered again), sets the CTD Relay
- *       address and profile only when this CTD OBS isn't connected to a CTD Relay, and takes hub.json /
+ *       Adds the feed servers this CTD OBS doesn't have (same ids, passwords to be entered again), sets the CTD Relay
+ *       address and profile only when this CTD OBS isn't connected to a CTD Relay, and takes feeds.json / hub.json /
  *       sync-groups.json only when this CTD OBS has none (they apply at the next start). Never touches a pairing.
  */
 
@@ -38,7 +39,8 @@
 
 #define LOG_PREFIX "[CTD] live-source: "
 
-static const char *const settings_files[] = {"multistream.json", "servers.json", "hub.json", "sync-groups.json"};
+static const char *const settings_files[] = {"multistream.json", "servers.json", "feeds.json", "hub.json",
+					     "sync-groups.json"};
 static const char *const settings_exts[] = {"", ".bak"};
 static const char *const moved_marker = ".live-source-moved";
 
@@ -115,8 +117,9 @@ static void move_to(const char *old_dir, char *ctd_dir)
 
 	int copied = 0;
 	if (!copy_settings(old_dir, ctd_dir, &copied)) {
-		blog(LOG_WARNING, LOG_PREFIX "settings stay in %s this time (moving them to %s failed; nothing was lost)",
-		     old_dir, ctd_dir);
+		blog(LOG_WARNING,
+		     LOG_PREFIX "settings stay in %s this time (moving them to %s failed; nothing was lost)", old_dir,
+		     ctd_dir);
 		dstr_free(&marker);
 		bfree(ctd_dir);
 		return;
@@ -151,6 +154,8 @@ static bool write_json(obs_data_t *data, const char *dir, const char *file)
 
 static void copy_plain(const char *file, const char *from_dir, const char *to_dir, bool only_if_missing, int *count)
 {
+	if (!from_dir || !*from_dir || !to_dir || !*to_dir)
+		return;
 	struct dstr src = {0}, dst = {0};
 	dstr_printf(&src, "%s%s%s", from_dir, (from_dir[strlen(from_dir) - 1] == '/') ? "" : "/", file);
 	dstr_printf(&dst, "%s%s%s", to_dir, (to_dir[strlen(to_dir) - 1] == '/') ? "" : "/", file);
@@ -161,10 +166,9 @@ static void copy_plain(const char *file, const char *from_dir, const char *to_di
 	dstr_free(&dst);
 }
 
-static void proc_export(void *unused, calldata_t *cd)
+/* `dir` is the caller's copy: calldata_string points into cd's buffer, which setting "success" may move */
+static void export_to(const char *dir, calldata_t *cd)
 {
-	UNUSED_PARAMETER(unused);
-	const char *dir = calldata_string(cd, "dir");
 	if (!dir || !*dir || os_mkdirs(dir) == MKDIR_ERROR) {
 		calldata_set_bool(cd, "success", false);
 		calldata_set_string(cd, "message", obs_module_text("Settings.Export.Failed"));
@@ -183,7 +187,7 @@ static void proc_export(void *unused, calldata_t *cd)
 	ok = write_json(relay, dir, "relay.json") && ok;
 	obs_data_release(relay);
 
-	/* CTD Hub servers without their secrets */
+	/* feed servers without their secrets */
 	obs_data_t *root = obs_data_create();
 	obs_data_array_t *items = obs_data_array_create();
 	const size_t count = servers_count();
@@ -211,6 +215,7 @@ static void proc_export(void *unused, calldata_t *cd)
 	obs_data_release(root);
 
 	int copied = 0;
+	copy_plain("feeds.json", settings_dir, dir, false, &copied);
 	copy_plain("hub.json", settings_dir, dir, false, &copied);
 	copy_plain("sync-groups.json", settings_dir, dir, false, &copied);
 
@@ -220,19 +225,22 @@ static void proc_export(void *unused, calldata_t *cd)
 	     ok ? "exported" : "partly exported", dir);
 }
 
-static void proc_import(void *unused, calldata_t *cd)
+static void import_from(const char *dir, calldata_t *cd)
 {
-	UNUSED_PARAMETER(unused);
-	const char *dir = calldata_string(cd, "dir");
+	if (!dir || !*dir) {
+		calldata_set_bool(cd, "success", false);
+		calldata_set_string(cd, "message", obs_module_text("Settings.Import.Failed"));
+		return;
+	}
 	struct dstr message = {0};
 	int servers_added = 0;
 	bool relay_set = false;
 	int files = 0;
 
-	/* CTD Hub servers this CTD OBS doesn't have, with the same ids (sources refer to them) */
+	/* feed servers this CTD OBS doesn't have, with the same ids (sources refer to them) */
 	struct dstr path = {0};
-	dstr_printf(&path, "%s/servers.json", dir ? dir : "");
-	obs_data_t *root = dir ? obs_data_create_from_json_file(path.array) : NULL;
+	dstr_printf(&path, "%s/servers.json", dir);
+	obs_data_t *root = obs_data_create_from_json_file(path.array);
 	obs_data_array_t *items = root ? obs_data_get_array(root, "servers") : NULL;
 	const bool had_servers = servers_count() > 0;
 	for (size_t i = 0; items && i < obs_data_array_count(items); i++) {
@@ -266,8 +274,8 @@ static void proc_import(void *unused, calldata_t *cd)
 	obs_data_release(root);
 
 	/* CTD Relay address and profile, only when this CTD OBS isn't connected to one */
-	dstr_printf(&path, "%s/relay.json", dir ? dir : "");
-	obs_data_t *relay = dir ? obs_data_create_from_json_file(path.array) : NULL;
+	dstr_printf(&path, "%s/relay.json", dir);
+	obs_data_t *relay = obs_data_create_from_json_file(path.array);
 	if (relay && *obs_data_get_string(relay, "server")) {
 		struct ms_snapshot s;
 		ms_snapshot_get(&s);
@@ -283,11 +291,11 @@ static void proc_import(void *unused, calldata_t *cd)
 	obs_data_release(relay);
 	dstr_free(&path);
 
-	/* Hub dock and sync groups, only when this CTD OBS has none (read at the next start) */
-	if (dir) {
-		copy_plain("hub.json", dir, settings_dir, true, &files);
-		copy_plain("sync-groups.json", dir, settings_dir, true, &files);
-	}
+	/* the Feeds dock and sync groups, only when this CTD OBS has none (read at the next start; an older export's
+	 * hub.json becomes feeds.json then) */
+	copy_plain("feeds.json", dir, settings_dir, true, &files);
+	copy_plain("hub.json", dir, settings_dir, true, &files);
+	copy_plain("sync-groups.json", dir, settings_dir, true, &files);
 
 	dstr_printf(&message, obs_module_text("Settings.Import.Done"), servers_added);
 	if (relay_set) {
@@ -300,9 +308,25 @@ static void proc_import(void *unused, calldata_t *cd)
 	}
 	calldata_set_bool(cd, "success", true);
 	calldata_set_string(cd, "message", message.array);
-	blog(LOG_INFO, LOG_PREFIX "CTD settings imported from %s: %d Hub server(s), relay address %s, %d file(s)",
-	     dir ? dir : "", servers_added, relay_set ? "set" : "unchanged", files);
+	blog(LOG_INFO, LOG_PREFIX "CTD settings imported from %s: %d feed server(s), relay address %s, %d file(s)", dir,
+	     servers_added, relay_set ? "set" : "unchanged", files);
 	dstr_free(&message);
+}
+
+static void proc_export(void *unused, calldata_t *cd)
+{
+	UNUSED_PARAMETER(unused);
+	char *dir = bstrdup(calldata_string(cd, "dir"));
+	export_to(dir, cd);
+	bfree(dir);
+}
+
+static void proc_import(void *unused, calldata_t *cd)
+{
+	UNUSED_PARAMETER(unused);
+	char *dir = bstrdup(calldata_string(cd, "dir"));
+	import_from(dir, cd);
+	bfree(dir);
 }
 
 /* --------------------------------------------------------------------------- init --- */
