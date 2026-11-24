@@ -756,6 +756,10 @@ public:
 		overlayScene_->setToolTip(uiText("Relay.Overlay.SceneTip"));
 		overlayScene_->setVisible(false);
 		overlaysLayout->addWidget(overlayScene_);
+		/* Local network or Public (internet), per CTD Relay profile, and the switch of existing sources (shared
+		 * with the CTD Overlays dock) */
+		address_ = new ov::AddressPicker(overlaysBox);
+		overlaysLayout->addWidget(address_);
 		/* stacked, not side by side, so the dock stays narrow enough for a side dock area */
 		auto *overlayButtons = new QVBoxLayout();
 		overlayButtons->setSpacing(6);
@@ -955,6 +959,7 @@ private:
 		showProfiles_->refresh();
 		struct ms_snapshot s;
 		ms_snapshot_get(&s);
+		address_->setContext(QString::fromUtf8(s.profile_id), s.overlays);
 		if (s.seq != lastSeq_) {
 			lastSeq_ = s.seq;
 			showConnection(s);
@@ -1494,10 +1499,12 @@ private:
 		return row >= 0 && row < (int)overlayData_.size() ? overlayData_[row].get() : nullptr;
 	}
 
-	/* scene: the one of meta.scenes the source shows; empty = the whole overlay, which follows its show */
-	static void setOverlaySettings(obs_source_t *source, obs_data_t *overlay, const QString &scene)
+	/* scene: the one of meta.scenes the source shows; empty = the whole overlay, which follows its show. At the
+	 * chosen address, or the one CTD Overlay gave when the overlay isn't known there (false). */
+	static bool setOverlaySettings(obs_source_t *source, obs_data_t *overlay, const QString &scene,
+				       ov::Address address)
 	{
-		ov::setSourceSettings(source, overlay, scene);
+		return ov::setSourceSettings(source, overlay, scene, address);
 	}
 
 	/* H21: a browser source at the overlay's size, in the current scene of the canvas meta.canvas names (the main
@@ -1506,12 +1513,15 @@ private:
 	 * Overlays dock) */
 	void addOverlay(obs_data_t *overlay, const QString &sceneId = QString())
 	{
-		const ov::AddResult added = ov::addToCurrentScene(overlay, sceneId);
-		if (added.noVertical)
+		const ov::AddResult added = ov::addToCurrentScene(overlay, sceneId, address_->address());
+		if (added.noAddress)
+			action_->setText(ov::AddressPicker::unavailableText(address_->address()));
+		else if (added.noVertical)
 			action_->setText(uiText("Relay.Overlay.NoVerticalCanvas"));
 		else if (!added.name.empty())
 			action_->setText(
 				uiText("Relay.Overlay.Added").arg(QString::fromStdString(added.name), added.where));
+		address_->rescan();
 	}
 
 	/* H21: browser sources showing one of the hub's overlays now show this profile's equivalent (meta.slot +
@@ -1521,9 +1531,11 @@ private:
 	{
 		struct Match {
 			MultiStreamDock *dock;
+			ov::Address address;
 			int switched = 0;
 			int kept = 0;
-		} match{this};
+			int otherAddress = 0; /* the equivalent overlay isn't known at the chosen address */
+		} match{this, address_->address()};
 		obs_enum_sources(
 			[](void *param, obs_source_t *source) {
 				auto *m = static_cast<Match *>(param);
@@ -1548,7 +1560,8 @@ private:
 					for (const OverlayScene &s : overlayScenes(o.get()))
 						hasScene = hasScene || s.id == scene;
 					if (hasScene) {
-						setOverlaySettings(source, o.get(), scene);
+						if (!setOverlaySettings(source, o.get(), scene, m->address))
+							m->otherAddress++;
 						m->switched++;
 					} else {
 						m->kept++;
@@ -1562,11 +1575,19 @@ private:
 					      : uiText("Relay.Overlay.NoneToSwitch");
 		if (match.kept)
 			text += " " + uiText("Relay.Overlay.SceneKept").arg(match.kept);
+		if (match.otherAddress)
+			text += " " + uiText("Relay.Overlay.OtherAddress").arg(match.otherAddress);
 		if (match.kept)
 			blog(LOG_INFO,
 			     "[CTD] relay: kept %d overlay source(s): their scene isn't in this profile's overlay",
 			     match.kept);
+		if (match.otherAddress)
+			blog(LOG_INFO,
+			     "[CTD] relay: %d switched overlay source(s) use the address CTD Overlay gave: their overlay "
+			     "isn't known at the chosen one",
+			     match.otherAddress);
 		action_->setText(text);
+		address_->rescan();
 	}
 
 	struct DataRef {
@@ -1602,6 +1623,7 @@ private:
 	bool connected_ = false;
 	QListWidget *overlays_;
 	QComboBox *overlayScene_;
+	ov::AddressPicker *address_;
 	QPushButton *addOverlay_;
 	QPushButton *switchOverlays_;
 	QLineEdit *template_;

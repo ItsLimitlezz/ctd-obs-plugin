@@ -4,6 +4,7 @@ on:
     paths:
       - src/overlays-core.*
       - src/overlay-scenes.*
+      - src/overlay-address.*
       - test/overlays-dock/**
       - .github/workflows/overlays-dock-tests.yaml
   push:
@@ -11,6 +12,7 @@ on:
     paths:
       - src/overlays-core.*
       - src/overlay-scenes.*
+      - src/overlay-address.*
       - test/overlays-dock/**
   workflow_dispatch:
 permissions:

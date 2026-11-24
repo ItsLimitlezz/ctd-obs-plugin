@@ -5,7 +5,9 @@
  * - Overlays: every overlay the connected CTD Overlay server registered for this OBS's CTD Relay profile, with its
  *   template and version, its scenes, whether the server is online and whether this scene collection already shows it.
  *   Search, grouped by show. For the whole overlay or one of its scenes: Add to scene (the same browser source the CTD
- *   Relay dock adds: overlay-sources.cpp), Copy URL, Open in browser, and the overlay's page in CTD Overlay.
+ *   Relay dock adds: overlay-sources.cpp), Copy URL, Open in browser, and the overlay's page in CTD Overlay. The
+ *   Address row (ov::AddressPicker, shared with the CTD Relay dock) picks the local network or public address for
+ *   them, says which one the collection's sources use, and switches those sources between the two.
  * - Updates: CTD Overlay's version, each template's installed version against the newest release of its followed
  *   GitHub source, which updates go by themselves (patch, minor) and which wait (major), the overlays waiting, with a
  *   button to their upgrade screen in CTD Overlay, and the first lines of each release's notes. OBS never upgrades.
@@ -192,12 +194,15 @@ struct Row {
 	QString waitingTo; /* a newer version waits for the operator */
 	bool waitingMajor = false;
 	std::vector<ov::Scene> scenes;
+	ctd_overlay_origins origins{}; /* its meta.addresses (overlay-address.h) */
 };
 
 /* What the scene collection shows of one overlay resource */
 struct InCollection {
 	int whole = 0;        /* sources showing the whole overlay */
 	QSet<QString> scenes; /* scenes some source pins */
+	int local = 0;        /* sources at its local network address */
+	int pub = 0;          /* sources at its public address */
 	bool any() const { return whole > 0 || !scenes.isEmpty(); }
 };
 
@@ -438,6 +443,9 @@ private:
 		actions->addWidget(copy_, 0, 1);
 		actions->addWidget(open_, 1, 0);
 		actions->addWidget(panel_, 1, 1);
+		/* the address Add, Copy URL and Open use, and the switch of existing sources */
+		address_ = new ov::AddressPicker(list_);
+		listLayout->addWidget(address_);
 		listLayout->addLayout(actions);
 		action_ = wrapped(QString(), list_, "muted");
 		listLayout->addWidget(action_);
@@ -599,6 +607,7 @@ private:
 			return;
 		ms_snapshot s = {};
 		ms_snapshot_get(&s);
+		address_->setContext(QString::fromUtf8(s.profile_id), s.overlays);
 		if (force || s.seq != lastSeq_) {
 			lastSeq_ = s.seq;
 			const bool connected = s.link == MS_CONNECTED;
@@ -649,6 +658,7 @@ private:
 			row.appName = str(r, "appName");
 			row.online = obs_data_get_bool(r, "appOnline");
 			row.scenes = ov::scenes(r);
+			row.origins = ov::origins(r);
 			const std::string appId = obs_data_get_string(r, "appId");
 			const std::string overlayId = row.key.section(':', 0, 0).toStdString();
 			auto app = summaryByApp.find(appId);
@@ -716,9 +726,12 @@ private:
 			const QString scene = b.scene.isEmpty() ? taken(ctd_overlay_scene_of_url(b.url.c_str()))
 								: b.scene;
 			for (const Row &row : rows_) {
+				/* at either of its addresses: compared at the one its own URL is at */
+				char *atDefault = ctd_overlay_url_at_default(&row.origins, b.url.c_str());
 				const bool same = (!b.resource.isEmpty() && b.resource == row.key) ||
-						  ctd_overlay_url_same(b.url.c_str(),
+						  ctd_overlay_url_same(atDefault ? atDefault : b.url.c_str(),
 								       obs_data_get_string(row.resource.get(), "url"));
+				free(atDefault);
 				if (!same)
 					continue;
 				InCollection &in = found[row.key];
@@ -726,6 +739,16 @@ private:
 					in.whole++;
 				else
 					in.scenes.insert(scene);
+				switch (ctd_overlay_address_of(&row.origins, b.url.c_str())) {
+				case CTD_ADDRESS_LOCAL:
+					in.local++;
+					break;
+				case CTD_ADDRESS_PUBLIC:
+					in.pub++;
+					break;
+				default:
+					break;
+				}
 				break;
 			}
 		}
@@ -733,7 +756,8 @@ private:
 		for (auto it = found.begin(); !changed && it != found.end(); ++it) {
 			auto was = collection_.find(it->first);
 			changed = was == collection_.end() || was->second.whole != it->second.whole ||
-				  was->second.scenes != it->second.scenes;
+				  was->second.scenes != it->second.scenes || was->second.local != it->second.local ||
+				  was->second.pub != it->second.pub;
 		}
 		collection_ = std::move(found);
 		return changed;
@@ -786,8 +810,11 @@ private:
 			details << uiText("Relay.Overlay.ScenesCount").arg(row.scenes.size());
 		QStringList flags;
 		flags << uiText(row.online ? "Overlays.Online" : "Overlays.Offline");
-		if (in && in->any())
-			flags << uiText("Overlays.InCollection");
+		if (in && in->any()) /* and at which address, when CTD Overlay says (an older one doesn't) */
+			flags << uiText(in->local && in->pub ? "Overlays.InCollection.Both"
+					: in->pub            ? "Overlays.InCollection.Public"
+					: in->local          ? "Overlays.InCollection.Local"
+							     : "Overlays.InCollection");
 		if (!row.waitingTo.isEmpty())
 			flags << uiText(row.waitingMajor ? "Overlays.UpdateWaitsMajor" : "Overlays.UpdateWaits")
 					 .arg(row.waitingTo);
@@ -940,8 +967,10 @@ private:
 		const Row *row = selected(&scene);
 		if (!row)
 			return;
-		const ov::AddResult added = ov::addToCurrentScene(row->resource.get(), scene);
-		if (added.noVertical)
+		const ov::AddResult added = ov::addToCurrentScene(row->resource.get(), scene, address_->address());
+		if (added.noAddress)
+			action_->setText(ov::AddressPicker::unavailableText(address_->address()));
+		else if (added.noVertical)
 			action_->setText(uiText("Relay.Overlay.NoVerticalCanvas"));
 		else if (!added.name.empty())
 			action_->setText(
@@ -950,16 +979,32 @@ private:
 			action_->setText(uiText("Overlays.AddFailed"));
 		if (scanCollection())
 			rebuildTree();
+		address_->rescan();
+	}
+
+	/* the selected overlay's (or scene's) URL at the chosen address; empty, with the reason shown, when it has none */
+	std::string selectedUrl(const Row **out)
+	{
+		QString scene;
+		const Row *row = selected(&scene);
+		if (out)
+			*out = row;
+		if (!row)
+			return std::string();
+		const std::string url = ov::sceneUrl(row->resource.get(), scene, address_->address());
+		if (url.empty())
+			action_->setText(ov::AddressPicker::unavailableText(address_->address()));
+		return url;
 	}
 
 	void copySelected()
 	{
-		QString scene;
-		const Row *row = selected(&scene);
-		if (!row)
+		const Row *row = nullptr;
+		const std::string url = selectedUrl(&row);
+		if (url.empty())
 			return;
 		/* the URL holds the overlay's key: it goes to the clipboard only, never to the log */
-		QApplication::clipboard()->setText(QString::fromStdString(ov::sceneUrl(row->resource.get(), scene)));
+		QApplication::clipboard()->setText(QString::fromStdString(url));
 		action_->setText(uiText("Overlays.Copied")
 					 .arg(obs_data_get_int(row->resource.get(), "width"))
 					 .arg(obs_data_get_int(row->resource.get(), "height")));
@@ -967,11 +1012,9 @@ private:
 
 	void openSelected()
 	{
-		QString scene;
-		const Row *row = selected(&scene);
-		if (!row)
-			return;
-		QDesktopServices::openUrl(QUrl(QString::fromStdString(ov::sceneUrl(row->resource.get(), scene))));
+		const std::string url = selectedUrl(nullptr);
+		if (!url.empty())
+			QDesktopServices::openUrl(QUrl(QString::fromStdString(url)));
 	}
 
 	void openControlPanel()
@@ -1397,6 +1440,7 @@ private:
 	QPushButton *copy_;
 	QPushButton *open_;
 	QPushButton *panel_;
+	ov::AddressPicker *address_;
 	QLabel *action_;
 
 	QVBoxLayout *updates_;

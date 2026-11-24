@@ -56,6 +56,7 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       src/obs/webhook.c
       src/obs/ws-vendor.c
       src/obsws-config.c
+      src/overlay-address.c
       src/overlay-scenes.c
       src/overlays-core.c
       src/plugin-main.c
@@ -222,8 +223,10 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/settings-section.cpp)
 #   cmake --build --preset <preset> --target ctd-producer-tests && ctest --test-dir <build dir> -C RelWithDebInfo
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ui/producer-core.c src/ui/producer-dock.cpp)
 # The CTD Overlays dock: CTD Overlay's overlays, template updates and the template kit, through CTD Relay. overlay-
-# sources.cpp is shared with the CTD Relay dock; overlays-core.c is pure C with its own tests: test/overlays-dock
+# sources.cpp is shared with the CTD Relay dock; overlays-core.c and overlay-address.c (the local network or public
+# address of an overlay) are pure C with their own tests: test/overlays-dock
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/overlays-core.c src/ui/overlay-sources.cpp src/ui/overlays-dock.cpp)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/overlay-address.c)
 if(WIN32)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ws2_32 bcrypt)
 endif()
