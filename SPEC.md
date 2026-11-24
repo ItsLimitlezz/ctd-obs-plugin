@@ -230,6 +230,13 @@ Custom Browser Docks**.
   the right canvas) and **Switch existing** (point browser sources already showing one of this app's overlays at the new
   profile's overlay with the same `meta.slot`, a role key that is the same for the equivalent overlay in every profile,
   and the same `canvas`; by name only when `slot` is missing), so a profile switch carries the scenes over. Never deletes sources.
+  **Address** (both docks with overlays): CTD Overlay's `meta.addresses` (`{ local?, public?, default }`, origins;
+  ctd-overlay 06 §6.11) gives the overlay's local network and public HTTPS address; `url` and the scene URLs are at
+  `default`, and the other address is the same URL with the origin swapped. **Local network** (default) or **Public
+  (internet)**, per CTD Relay profile, used by adding, Copy URL and Open; Public grayed out while no overlay has a
+  public address, and never an `http://` one. **Switch to public / local** rewrites the origin of the collection's
+  browser sources whose URL is one of the overlays' (its origin one of the overlay's, its path the overlay's), the
+  query kept. Without `meta.addresses` (an older CTD Overlay) its `url` is used as it is. URLs are never logged.
 - **H22.** **Talk to other apps through the hub.** Register as `ctd-obs-plugin-<machine>` (`PUT /apps/{id}`,
   re-sent at least every 60 s) and send requests such as `overlay.create` to CTD Overlay with `POST /messages`;
   replies arrive as `app.message` events. The registration offers the plugin's own capabilities (to be defined,

@@ -272,6 +272,8 @@ talks to for everything after OBS:
    scene. **Add each scene to the OBS scene with its name** puts each scene into the OBS scene of its canvas with the
    same name ("Starting Soon", "BRB"). Switching keeps each source on its scene. Needs a CTD Overlay that publishes
    its scenes (`meta.scenes` on its CTD Relay resources); with an older one only the whole overlay is offered.
+   **Address** picks where OBS opens the overlays: **Local network** (the default) or **Public (internet)**, for OBS
+   outside CTD Overlay's network; see [Overlay address](#overlay-address).
 6. With API v1.4 the plugin also tells CTD Relay what OBS is doing, for its other apps such as CTD Live
    mobile: each CTD source's state (live, stalled, reconnecting, no signal, and how long a gap lasted) with its fps,
    size and lateness every 5 s, the main stream, recording and Aitum Vertical outputs going live, reconnecting or
@@ -331,6 +333,8 @@ CTD Relay dock's connection and profile: CTD Relay is the hub, and this dock nev
   source the CTD Relay dock adds: at the overlay's size, top-left, on the vertical canvas for a vertical overlay),
   **Copy URL** (it holds the overlay's key: paste it only into OBS), **Open in browser**, or **Control panel** (the
   overlay's page in CTD Overlay). Not connected, or no CTD Overlay for this profile: the dock says how to connect.
+  **Address** picks the address Add to scene, Copy URL and Open use; each row says which address the collection's
+  sources of it use. See [Overlay address](#overlay-address).
 - **Updates:** CTD Overlay's version; each template's installed version against the newest release of the GitHub
   repository it follows, and whether the update reaches overlays by itself (patch, minor) or waits for you (major);
   the first lines of the release notes; and the overlays that wait, each with **Open upgrade screen** (the overlay's
@@ -339,6 +343,25 @@ CTD Relay dock's connection and profile: CTD Relay is the hub, and this dock nev
 - **Make a template:** the template kit in six short steps, **Copy AI prompt** (CTD Overlay's PROMPT.md),
   **Open template guide** and **Download starter** (the starter template, the prompt and the guide, read from CTD
   Overlay's repository on GitHub into a folder you pick).
+
+### Overlay address
+
+CTD Overlay can be reached at two addresses: its address on your network (`SKP_HOSTS`) and, behind a reverse proxy,
+its public HTTPS address (`SKP_PUBLIC_URL`). With both set, it shares both with CTD Relay on each overlay
+(`meta.addresses`), and the overlay sections of the CTD Relay and CTD Overlays docks offer:
+
+- **Address: Local network** or **Public (internet)**, used by adding an overlay, **Copy URL** and **Open in
+  browser**. Remembered per CTD Relay profile; Local network until you pick Public. Public is grayed out, with "Set a
+  public address in CTD Overlay", while none of the profile's overlays has one. A public address that isn't
+  `https://` is never used.
+- Which address the scene collection's CTD overlay browser sources use (and, in the CTD Overlays dock, each
+  overlay's).
+- **Switch to public** / **Switch to local**: points the scene collection's CTD overlay browser sources at the chosen
+  address. Only sources whose URL is one of these overlays' (at one of CTD Overlay's addresses, the overlay's own
+  path) change, and only the address: the scene (`?scene=`), the key and the canvas stay as they are. While you are
+  live it asks first, as the sources reload. The log has counts only, never URLs (they hold the overlays' keys).
+
+An older CTD Overlay shares one URL: it is used as it is, and Public stays grayed out.
 
 ### Server profiles
 
@@ -544,7 +567,8 @@ opens a draft release with the packages attached.
   merged chat's ring) is plain C with no OBS or Qt in it, tested by `test/producer`.
 - `src/ui/overlays-dock.cpp`, `src/ui/overlay-sources.cpp` and `src/overlays-core.c`: the CTD Overlays dock.
   `overlay-sources.cpp` adds an overlay as a browser source for it and the CTD Relay dock alike; `overlays-core.c`
-  (versions, update kinds, links, matching sources) is plain C, tested by `test/overlays-dock`.
+  (versions, update kinds, links, matching sources) is plain C, tested by `test/overlays-dock`, and so is
+  `src/overlay-address.c` (an overlay's URL at its local network or public address, and the switch between them).
 - `tools/ctd-live-probe/`: the engine on the command line.
 - `test/`: the test harness.
 
