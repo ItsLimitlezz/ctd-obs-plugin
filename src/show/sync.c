@@ -392,11 +392,16 @@ struct after_job {
 static void after_job_ui(void *param)
 {
 	struct after_job *a = param;
+	/* The worker is joined before the show goes idle: while it is busy no other job can start, so this joins the
+	 * job that queued it, never a newer one (that could be a long export, or a switch waiting on this thread). */
 	show_join_worker();
+	show_set_busy(SHOW_IDLE);
 	sy.job_running = false;
 	if (a->update_ready && a->id[0])
 		cj_set_bool(sy.update_ready, a->id, true);
-	if (a->job->kind == JOB_PULL && !a->ok && a->job->automatic && a->job->relay[0])
+	/* An automatic pull waits a while whatever its outcome: one that found nothing new for a profile that still
+	 * looks stale (two local profiles linked to the same Relay profile) would otherwise start again at once */
+	if (a->job->kind == JOB_PULL && a->job->automatic && a->job->relay[0])
 		cj_set_int(sy.pull_backoff, a->job->relay, now_s() + PULL_BACKOFF_S);
 	if (a->job->switch_after && a->ok && a->id[0])
 		show_switch(a->id, 0);
@@ -459,10 +464,19 @@ static void *job_thread(void *param)
 	switch (job->kind) {
 	case JOB_SAVE_UP:
 		ok = show_flow_save_up(&ops, job->id, job->relay[0] ? job->relay : NULL, -1, job->scratch, NULL, &out);
-		if (ok || out.conflict || out.result == SHOW_RELAY_DENIED)
+		switch (show_save_up_queue_action(ok, out.conflict, out.result,
+						  job->automatic || show_sync_queue_has(job->id))) {
+		case SHOW_SAVE_UP_QUEUE_REMOVE:
 			show_sync_queue_remove(job->id);
-		else if (out.result == SHOW_RELAY_OFFLINE)
+			break;
+		case SHOW_SAVE_UP_QUEUE_RETRY:
+			/* every failed attempt of a queued save-up moves its next try back (15 s … 600 s); before, only
+			 * "offline" did, so any other failure left it due and it ran again back to back */
 			show_sync_queue_add(job->id, now_s(), out.error);
+			break;
+		case SHOW_SAVE_UP_QUEUE_KEEP:
+			break;
+		}
 		if (out.conflict)
 			set_conflict(job, out.head);
 		break;
@@ -499,7 +513,7 @@ static void *job_thread(void *param)
 	sy.seq++;
 	unlock();
 	show_reload_entries();
-	show_set_busy(SHOW_IDLE);
+	/* still busy: after_job_ui joins this thread, then sets the show idle */
 	obs_queue_task(OBS_TASK_UI, after_job_ui, a, false);
 	return NULL;
 }
@@ -751,11 +765,20 @@ static void tick_ui(void *unused)
 			sy.pending_upload[0] = '\0';
 			if (!st.message_is_error) /* the Update before it worked (or found no changes) */
 				start_save_up(id, false);
-		} else if (connected) {
+		} else if (connected && !st.live) {
+			/* never while an output is active: a queued save-up or an automatic pull moves whole bundles and
+			 * assets, and waits for the show to end (the user's own Save / Update / Pull still run at once) */
 			bool started = false;
 			cj *due = show_sync_queue_due(now_s());
-			if (cj_size(due))
-				started = start_save_up(cj_str(cj_at(due, 0)), true);
+			if (cj_size(due)) {
+				const char *id = cj_str(cj_at(due, 0));
+				cj *meta = show_store_meta(id);
+				if (meta)
+					started = start_save_up(id, true);
+				else
+					show_sync_queue_remove(id); /* the profile was deleted: nothing left to save */
+				cj_free(meta);
+			}
 			cj_free(due);
 			for (size_t i = 0; !started && i < st.count; i++) {
 				const struct show_entry *e = &st.entries[i];

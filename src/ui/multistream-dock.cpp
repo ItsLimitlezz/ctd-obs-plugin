@@ -30,6 +30,8 @@
 #include <QMessageBox>
 #include <QPointer>
 #include <QPushButton>
+#include <QRegularExpression>
+#include <QStringList>
 #include <QTextBrowser>
 #include <QTimer>
 #include <QUrl>
@@ -37,13 +39,16 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <string>
 #include <vector>
 
 #include "../multistream.h"
 #include "../obs/servers.h"
 #include "../overlay-scenes.h"
+#include "../relay-encoder.h"
 #include "icons.hpp"
+#include "overlay-sources.hpp"
 #include "show-section.hpp"
 
 namespace {
@@ -54,13 +59,12 @@ QString uiText(const char *key)
 	return QString::fromUtf8(obs_module_text(key));
 }
 
-/* the private settings keys that mark a browser source as one of the hub's overlays (H21) */
-constexpr const char *kOverlaySlot = "ctd_overlay_slot";
-constexpr const char *kOverlayCanvas = "ctd_overlay_canvas";
-constexpr const char *kOverlayName = "ctd_overlay_name";
-constexpr const char *kOverlayApp = "ctd_overlay_app";
-/* the overlay's scene the source is pinned to (meta.scenes id, SKP 04 §4.9); empty or absent = the whole overlay */
-constexpr const char *kOverlayScene = "ctd_overlay_scene";
+/* the private settings keys that mark a browser source as one of the hub's overlays (H21): overlay-sources.hpp */
+namespace ov = ctd::overlays;
+constexpr const char *kOverlaySlot = ov::kSlot;
+constexpr const char *kOverlayCanvas = ov::kCanvas;
+constexpr const char *kOverlayName = ov::kName;
+constexpr const char *kOverlayScene = ov::kScene;
 
 QString str(obs_data_t *data, const char *key)
 {
@@ -70,63 +74,21 @@ QString str(obs_data_t *data, const char *key)
 /* landscape or vertical: meta.canvas, else the shape */
 QString overlayCanvas(obs_data_t *overlay)
 {
-	obs_data_t *meta = obs_data_get_obj(overlay, "meta");
-	QString canvas = str(meta, "canvas");
-	obs_data_release(meta);
-	if (canvas.isEmpty())
-		canvas = obs_data_get_int(overlay, "height") > obs_data_get_int(overlay, "width") ? "vertical"
-												  : "landscape";
-	return canvas;
+	return ov::canvas(overlay);
 }
 
 QString overlaySlot(obs_data_t *overlay)
 {
-	obs_data_t *meta = obs_data_get_obj(overlay, "meta");
-	const QString slot = str(meta, "slot");
-	obs_data_release(meta);
-	return slot;
+	return ov::slot(overlay);
 }
 
 /* One of the scenes CTD Overlay says a URL may pin (meta.scenes: [{ id, name, core? }]), for a source per scene. */
-struct OverlayScene {
-	QString id;
-	QString name;
-	std::string url; /* its own browser-source URL when CTD Overlay gives one; else the overlay's with scene=<id> */
-};
+using OverlayScene = ov::Scene;
 
 /* meta.scenes, the ones with an id; empty when the overlay offers no choice (one scene, or an older CTD Overlay) */
 std::vector<OverlayScene> overlayScenes(obs_data_t *overlay)
 {
-	std::vector<OverlayScene> out;
-	obs_data_t *meta = obs_data_get_obj(overlay, "meta");
-	obs_data_array_t *scenes = meta ? obs_data_get_array(meta, "scenes") : nullptr;
-	const size_t count = scenes ? obs_data_array_count(scenes) : 0;
-	for (size_t i = 0; i < count; i++) {
-		obs_data_t *scene = obs_data_array_item(scenes, i);
-		const QString id = str(scene, "id");
-		const QString name = str(scene, "name");
-		if (!id.isEmpty())
-			out.push_back({id, name.isEmpty() ? id : name, obs_data_get_string(scene, "url")});
-		obs_data_release(scene);
-	}
-	obs_data_array_release(scenes);
-	obs_data_release(meta);
-	return out;
-}
-
-/* the overlay's URL showing only `scene` (the whole overlay when it is empty): the scene's own url from meta.scenes,
- * else the overlay's url with scene=<id> set (SKP 04 §4.9) */
-std::string overlaySceneUrl(obs_data_t *overlay, const QString &scene)
-{
-	if (!scene.isEmpty())
-		for (const OverlayScene &s : overlayScenes(overlay))
-			if (s.id == scene && !s.url.empty())
-				return s.url;
-	const QByteArray id = scene.toUtf8();
-	char *url = ctd_overlay_scene_url(obs_data_get_string(overlay, "url"), id.isEmpty() ? nullptr : id.constData());
-	std::string out = url ? url : obs_data_get_string(overlay, "url");
-	free(url);
-	return out;
+	return ov::scenes(overlay);
 }
 
 /* stream keys are secrets: only their start is ever shown */
@@ -227,66 +189,434 @@ bool obsMultitrackEnabled()
 	return profile && config_get_bool(profile, "Stream1", "EnableMultitrackVideo");
 }
 
-/* Keyframe interval 2 s on the main stream encoder (Relay warns about long keyframes). Only the keyint_sec of the
- * advanced-output encoder is touched; simple output already uses 2 s. Returns true when the setting is now 2 s. */
-bool setMainKeyframe2s()
+/* The vertical canvas Aitum Stream Suite (or anything else) made with OBS's canvas API: overlay-sources.hpp */
+using ov::canvasCurrentScene;
+using ov::findVerticalCanvas;
+
+/* ---- A stream to CTD Relay has to be H.264 + AAC (relay-encoder.h): the pre-flight check and "Send stream" ---- */
+
+/* The profile setting that remembers the server "Send stream" set, so the check knows the stream is CTD Relay's. */
+constexpr const char *kRelaySection = "CTD";
+constexpr const char *kRelayServerKey = "RelayStreamServer";
+/* what ctd_vertical_set_output names the vertical canvas's output it sets */
+constexpr const char *kCtdVerticalOutputName = "CTD Relay";
+
+struct StreamCodecs {
+	std::string video; /* libobs codec strings ("h264", "hevc", "aac", ...); empty when not known */
+	std::string audio;
+};
+
+bool encoderAvailable(void *, const char *id)
+{
+	return obs_get_encoder_codec(id) != nullptr;
+}
+
+std::string codecOf(const char *encoderId)
+{
+	const char *codec = encoderId && *encoderId ? obs_get_encoder_codec(encoderId) : nullptr;
+	return codec ? codec : "";
+}
+
+/* the codec of the first of these encoders (by name) that exists */
+std::string codecOfNamed(std::initializer_list<const char *> names)
+{
+	for (const char *name : names) {
+		obs_encoder_t *encoder = obs_get_encoder_by_name(name);
+		if (!encoder)
+			continue;
+		const char *codec = obs_encoder_get_codec(encoder);
+		std::string out = codec ? codec : "";
+		obs_encoder_release(encoder);
+		return out;
+	}
+	return std::string();
+}
+
+std::string profileString(const char *section, const char *key)
 {
 	config_t *profile = obs_frontend_get_profile_config();
-	const char *mode = profile ? config_get_string(profile, "Output", "Mode") : nullptr;
-	if (!mode || std::string(mode) != "Advanced")
+	const char *value = profile ? config_get_string(profile, section, key) : nullptr;
+	return value ? value : "";
+}
+
+bool advancedOutputMode()
+{
+	return profileString("Output", "Mode") == "Advanced";
+}
+
+/* What the profile's settings say a stream will be. The vertical canvas builds its encoder from these each time it
+ * starts; OBS's own stream encoders are built from them when OBS sets up its outputs. */
+StreamCodecs configuredStreamCodecs()
+{
+	StreamCodecs out;
+	if (advancedOutputMode()) {
+		out.video = codecOf(profileString("AdvOut", "Encoder").c_str());
+		out.audio = codecOf(profileString("AdvOut", "AudioEncoder").c_str());
+		return out;
+	}
+	switch (relay_simple_codec(profileString("SimpleOutput", "StreamEncoder").c_str())) {
+	case RELAY_CODEC_H264:
+		out.video = "h264";
+		break;
+	case RELAY_CODEC_HEVC:
+		out.video = "hevc";
+		break;
+	case RELAY_CODEC_AV1:
+		out.video = "av1";
+		break;
+	default:
+		break;
+	}
+	const std::string audio = profileString("SimpleOutput", "StreamAudioEncoder");
+	if (!audio.empty())
+		out.audio = audio == "opus" ? "opus" : "aac";
+	return out;
+}
+
+/* What OBS's main stream really is: the encoders on the running stream while live; else the ones OBS's frontend
+ * has built for the next stream (they follow the settings only once OBS rebuilds its outputs); else the settings. */
+StreamCodecs mainStreamCodecs()
+{
+	StreamCodecs out;
+	if (obs_frontend_streaming_active()) {
+		obs_output_t *output = obs_frontend_get_streaming_output();
+		obs_encoder_t *video = output ? obs_output_get_video_encoder(output) : nullptr;
+		obs_encoder_t *audio = output ? obs_output_get_audio_encoder(output, 0) : nullptr;
+		const char *videoCodec = video ? obs_encoder_get_codec(video) : nullptr;
+		const char *audioCodec = audio ? obs_encoder_get_codec(audio) : nullptr;
+		out.video = videoCodec ? videoCodec : "";
+		out.audio = audioCodec ? audioCodec : "";
+		if (output)
+			obs_output_release(output);
+	}
+	const bool advanced = advancedOutputMode();
+	if (out.video.empty())
+		out.video = advanced ? codecOfNamed({"advanced_video_stream"}) : codecOfNamed({"simple_video_stream"});
+	if (out.audio.empty())
+		out.audio = advanced ? codecOfNamed({"adv_stream_audio", "adv_stream_audio_0"})
+				     : codecOfNamed({"simple_aac", "simple_opus"});
+	const StreamCodecs configured = configuredStreamCodecs();
+	if (out.video.empty())
+		out.video = configured.video;
+	if (out.audio.empty())
+		out.audio = configured.audio;
+	return out;
+}
+
+unsigned streamIssues(const StreamCodecs &codecs)
+{
+	return relay_stream_issues(codecs.video.c_str(), codecs.audio.c_str());
+}
+
+/* "HEVC", "AV1", ... for the dock */
+QString codecLabel(const std::string &codec)
+{
+	return QString::fromUtf8(relay_video_codec_label(codec.c_str()));
+}
+
+/* the vertical canvas's stream output as CTD OBS reports it (ctd_vertical_get_output; never the key) */
+struct VerticalOutput {
+	bool configured = false;
+	bool enabled = false;
+	bool active = false;
+	QString name;
+	QString server;
+	/* the output "Send stream" set, switched on */
+	bool toRelay() const { return configured && enabled && name == kCtdVerticalOutputName; }
+};
+
+VerticalOutput ctdVerticalOutput()
+{
+	VerticalOutput out;
+	calldata_t cd = {};
+	if (proc_handler_call(obs_get_proc_handler(), "ctd_vertical_get_output", &cd)) {
+		out.configured = calldata_bool(&cd, "configured");
+		out.enabled = calldata_bool(&cd, "enabled");
+		out.active = calldata_bool(&cd, "active");
+		out.name = QString::fromUtf8(calldata_string(&cd, "name"));
+		out.server = QString::fromUtf8(calldata_string(&cd, "server"));
+	}
+	calldata_free(&cd);
+	return out;
+}
+
+/* The codecs on the vertical canvas's stream while it runs; empty when it doesn't. The canvas hands out its outputs
+ * through Aitum's proc, by canvas size and output name. */
+StreamCodecs verticalLiveCodecs(const QString &outputName)
+{
+	StreamCodecs out;
+	struct obs_video_info ovi = {};
+	obs_canvas_t *canvas = findVerticalCanvas();
+	const bool sized = canvas && obs_canvas_get_video_info(canvas, &ovi);
+	if (canvas)
+		obs_canvas_release(canvas);
+	/* by the vertical canvas's size, then whichever canvas the plugin lists first */
+	for (int attempt = sized ? 0 : 1; attempt < 2 && out.video.empty(); attempt++) {
+		calldata_t cd = {};
+		calldata_set_int(&cd, "width", attempt == 0 ? ovi.base_width : 0);
+		calldata_set_int(&cd, "height", attempt == 0 ? ovi.base_height : 0);
+		calldata_set_string(&cd, "name", outputName.toUtf8().constData());
+		obs_output_t *output = nullptr;
+		if (proc_handler_call(obs_get_proc_handler(), "aitum_vertical_get_stream_output", &cd))
+			output = static_cast<obs_output_t *>(calldata_ptr(&cd, "output"));
+		calldata_free(&cd);
+		if (output && obs_output_active(output)) {
+			obs_encoder_t *video = obs_output_get_video_encoder(output);
+			obs_encoder_t *audio = obs_output_get_audio_encoder(output, 0);
+			const char *videoCodec = video ? obs_encoder_get_codec(video) : nullptr;
+			const char *audioCodec = audio ? obs_encoder_get_codec(audio) : nullptr;
+			out.video = videoCodec ? videoCodec : "";
+			out.audio = audioCodec ? audioCodec : "";
+		}
+		if (output)
+			obs_output_release(output); /* the proc gives a reference */
+	}
+	return out;
+}
+
+/* OBS's main stream when it is a custom RTMP server; empty for a platform service (Twitch, YouTube, ...). */
+QString mainCustomServer()
+{
+	obs_service_t *service = obs_frontend_get_streaming_service(); /* not a new reference */
+	if (!service || strcmp(obs_service_get_id(service), "rtmp_custom") != 0)
+		return QString();
+	obs_data_t *settings = obs_service_get_settings(service);
+	const QString server = str(settings, "server");
+	obs_data_release(settings);
+	return server;
+}
+
+/* Does OBS's main stream go to CTD Relay? Yes when its server is the one "Send stream" set (remembered in the
+ * profile). A stream set before that was remembered, or by hand, counts when it goes to CTD Relay's own host: the
+ * address in the dock, or the vertical canvas's "CTD Relay" output. */
+bool mainStreamGoesToRelay(const QString &relayAddress, const VerticalOutput &vertical)
+{
+	const QString server = mainCustomServer();
+	if (server.isEmpty())
 		return false;
+	const std::string sent = profileString(kRelaySection, kRelayServerKey);
+	if (!sent.empty() && server == QString::fromUtf8(sent.c_str()))
+		return true;
+	const QString host = QUrl(server).host().toLower();
+	if (host.isEmpty())
+		return false;
+	const QString relay = relayAddress.trimmed();
+	if (!relay.isEmpty() && QUrl::fromUserInput(relay).host().toLower() == host)
+		return true;
+	return vertical.configured && vertical.name == kCtdVerticalOutputName &&
+	       QUrl(vertical.server).host().toLower() == host;
+}
+
+void rememberRelayServer(const QString &server)
+{
+	config_t *profile = obs_frontend_get_profile_config();
+	if (!profile)
+		return;
+	config_set_string(profile, kRelaySection, kRelayServerKey, server.toUtf8().constData());
+	config_save_safe(profile, "tmp", nullptr);
+}
+
+/* Constant bitrate, where the encoder has it (Apple's VideoToolbox doesn't on Intel Macs). */
+bool encoderOffersCbr(const char *encoderId)
+{
+	bool found = false;
+	obs_properties_t *props = obs_get_encoder_properties(encoderId);
+	obs_property_t *rateControl = props ? obs_properties_get(props, "rate_control") : nullptr;
+	if (rateControl && obs_property_get_type(rateControl) == OBS_PROPERTY_LIST &&
+	    obs_property_list_format(rateControl) == OBS_COMBO_FORMAT_STRING) {
+		const size_t count = obs_property_list_item_count(rateControl);
+		for (size_t i = 0; i < count && !found; i++) {
+			const char *value = obs_property_list_item_string(rateControl, i);
+			found = value && strcmp(value, "CBR") == 0;
+		}
+	}
+	if (props)
+		obs_properties_destroy(props);
+	return found;
+}
+
+/* what makeStreamRelayCompatible() did, for the dock's status line and the log */
+struct RelayFix {
+	bool videoSwitched = false; /* the settings now name an H.264 encoder */
+	bool audioSwitched = false; /* ... and an AAC one */
+	bool noH264 = false;        /* the video isn't H.264 and this machine has no H.264 encoder to switch to */
+	bool keyframeSet = false;   /* advanced output: keyint_sec 2 written */
+	bool cbrSet = false;        /* advanced output: rate control CBR written */
+	bool needsRestart = false;  /* the settings are right, but OBS's stream encoders are still the old ones */
+	QString reloadError;        /* why OBS couldn't rebuild them now */
+	std::string from;           /* "HEVC", "AV1": what the video was */
+};
+
+/* Advanced output: the stream encoder's settings (streamEncoder.json in the profile) get a 2 s keyframe interval
+ * (CTD Relay warns about long ones) and CBR. After a change of encoder only the bitrate is carried over: the old
+ * encoder's own settings (profile, preset, ...) mean something else, or nothing, to the new one. */
+void writeStreamEncoderSettings(const char *encoderId, bool encoderChanged, RelayFix &fix)
+{
 	char *dir = obs_frontend_get_current_profile_path();
 	if (!dir)
-		return false;
+		return;
 	const std::string path = std::string(dir) + "/streamEncoder.json";
 	bfree(dir);
-	obs_data_t *enc = obs_data_create_from_json_file_safe(path.c_str(), "bak");
-	if (!enc)
-		enc = obs_data_create();
-	obs_data_set_int(enc, "keyint_sec", 2);
-	const bool ok = obs_data_save_json_safe(enc, path.c_str(), "tmp", "bak");
-	obs_data_release(enc);
+	obs_data_t *old = obs_data_create_from_json_file_safe(path.c_str(), "bak");
+	obs_data_t *settings = obs_data_create();
+	if (old && !encoderChanged)
+		obs_data_apply(settings, old);
+	else if (old && obs_data_has_user_value(old, "bitrate"))
+		obs_data_set_int(settings, "bitrate", obs_data_get_int(old, "bitrate"));
+	obs_data_release(old);
+	obs_data_set_int(settings, "keyint_sec", 2);
+	const bool cbr = encoderOffersCbr(encoderId);
+	if (cbr)
+		obs_data_set_string(settings, "rate_control", "CBR");
+	if (obs_data_save_json_safe(settings, path.c_str(), "tmp", "bak")) {
+		fix.keyframeSet = true;
+		fix.cbrSet = cbr;
+	}
+	obs_data_release(settings);
+}
+
+/* OBS builds its stream encoders when it sets up its outputs, not when the settings change. CTD OBS's core can load
+ * a profile from a staged folder (ctd_show_apply, the proc Show Profiles uses): loading the active profile's own
+ * files again makes it set its outputs up afresh. Stock OBS has no such call. False with a reason when it didn't
+ * happen. */
+bool reloadActiveProfile(QString &error)
+{
+	static const char *const files[] = {"basic.ini", "service.json", "streamEncoder.json", "recordEncoder.json"};
+	config_t *profile = obs_frontend_get_profile_config();
+	char *dir = obs_frontend_get_current_profile_path();
+	char *stage = obs_module_config_path("relay-profile-stage");
+	if (!profile || !dir || !stage) {
+		bfree(dir);
+		bfree(stage);
+		error = uiText("Relay.Fix.NoCore");
+		return false;
+	}
+	/* the core finds the profile to load by the name in the staged basic.ini: always the active one's */
+	char *name = obs_frontend_get_current_profile();
+	if (name && *name)
+		config_set_string(profile, "General", "Name", name);
+	bfree(name);
+	config_save_safe(profile, "tmp", nullptr);
+	os_mkdirs(stage);
+	for (const char *file : files) {
+		const std::string from = std::string(dir) + "/" + file;
+		const std::string to = std::string(stage) + "/" + file;
+		os_unlink(to.c_str());
+		if (os_file_exists(from.c_str()))
+			os_copyfile(from.c_str(), to.c_str());
+	}
+	calldata_t cd = {};
+	/* the core's name for it, and the one older cores read */
+	calldata_set_string(&cd, "profile", stage);
+	calldata_set_string(&cd, "profile_path", stage);
+	const bool found = proc_handler_call(obs_get_proc_handler(), "ctd_show_apply", &cd);
+	const bool ok = found && calldata_bool(&cd, "success");
+	if (!found)
+		error = uiText("Relay.Fix.NoCore");
+	else if (!ok)
+		error = QString::fromUtf8(calldata_string(&cd, "error"));
+	calldata_free(&cd);
+	/* the staged service.json holds the stream key: never left behind */
+	for (const char *file : files)
+		os_unlink((std::string(stage) + "/" + file).c_str());
+	os_rmdir(stage);
+	bfree(dir);
+	bfree(stage);
 	return ok;
 }
 
-/* The vertical canvas Aitum Stream Suite (or anything else) made with OBS's canvas API: the first canvas other than
- * the main one whose picture is taller than wide. A strong reference, or nullptr. */
-obs_canvas_t *findVerticalCanvas()
+/* Makes OBS's stream what CTD Relay can pass on: H.264 video (this machine's hardware encoder, else x264), AAC
+ * audio, a 2 s keyframe interval and CBR. The bitrate, resolution and frame rate stay the user's, and an encoder
+ * that is H.264 already is kept. The vertical canvas follows the same settings unless it was given its own. Only
+ * call it while nothing is streaming. */
+RelayFix makeStreamRelayCompatible()
 {
-	struct Find {
-		obs_canvas_t *main;
-		obs_canvas_t *found = nullptr;
-	} find{obs_get_main_canvas()};
-	obs_enum_canvases(
-		[](void *param, obs_canvas_t *canvas) {
-			auto *f = static_cast<Find *>(param);
-			struct obs_video_info ovi = {};
-			if (canvas != f->main && obs_canvas_get_video_info(canvas, &ovi) &&
-			    ovi.base_height > ovi.base_width) {
-				f->found = obs_canvas_get_ref(canvas);
-				return false;
-			}
-			return true;
-		},
-		&find);
-	obs_canvas_release(find.main);
-	return find.found;
+	RelayFix fix;
+	config_t *profile = obs_frontend_get_profile_config();
+	if (!profile)
+		return fix;
+	const relay_platform_t platform = relay_platform_current();
+	relay_video_fix_t video = {};
+	if (advancedOutputMode()) {
+		const std::string encoder = profileString("AdvOut", "Encoder");
+		std::string codec = codecOf(encoder.c_str());
+		if (codec.empty()) /* a name OBS itself maps to an encoder (macOS's old "vt_h264_hw") */
+			codec = codecOfNamed({"advanced_video_stream"});
+		relay_video_fix(encoder.c_str(), codec.c_str(), platform, encoderAvailable, nullptr, &video);
+		if (video.needed && video.possible) {
+			config_set_string(profile, "AdvOut", "Encoder", video.encoder);
+			fix.videoSwitched = true;
+		}
+		if (video.possible)
+			writeStreamEncoderSettings(video.encoder, fix.videoSwitched, fix);
+
+		const std::string audio = profileString("AdvOut", "AudioEncoder");
+		std::string audioCodec = codecOf(audio.c_str());
+		if (audioCodec.empty())
+			audioCodec = codecOfNamed({"adv_stream_audio"});
+		const char *aac = relay_audio_is_aac(audioCodec.c_str()) ? nullptr
+									 : relay_pick_aac(encoderAvailable, nullptr);
+		if (aac) {
+			config_set_string(profile, "AdvOut", "AudioEncoder", aac);
+			fix.audioSwitched = true;
+		}
+	} else {
+		/* simple output is CBR already, and has no keyframe setting of its own */
+		const std::string encoder = profileString("SimpleOutput", "StreamEncoder");
+		relay_video_fix_simple(encoder.c_str(), platform, encoderAvailable, nullptr, &video);
+		if (video.needed && video.possible) {
+			config_set_string(profile, "SimpleOutput", "StreamEncoder", video.encoder);
+			fix.videoSwitched = true;
+		}
+		if (profileString("SimpleOutput", "StreamAudioEncoder") == "opus") {
+			config_set_string(profile, "SimpleOutput", "StreamAudioEncoder", "aac");
+			fix.audioSwitched = true;
+		}
+	}
+	fix.noH264 = video.needed && !video.possible;
+	fix.from = video.from == RELAY_CODEC_HEVC ? "HEVC" : video.from == RELAY_CODEC_AV1 ? "AV1" : "";
+	if (fix.videoSwitched || fix.audioSwitched)
+		config_save_safe(profile, "tmp", nullptr);
+	if (fix.videoSwitched)
+		blog(LOG_INFO, "[CTD] relay: video encoder switched to %s (H.264)%s%s: CTD Relay needs H.264",
+		     video.encoder, fix.from.empty() ? "" : " from ", fix.from.c_str());
+	if (fix.audioSwitched)
+		blog(LOG_INFO, "[CTD] relay: audio encoder switched to AAC: CTD Relay needs AAC");
+	if (fix.noH264)
+		blog(LOG_WARNING, "[CTD] relay: the stream isn't H.264 and there is no H.264 encoder to switch to");
+
+	/* the settings are right now; OBS's own stream encoders may still be the old ones */
+	if (!fix.noH264 && streamIssues(mainStreamCodecs()) != 0) {
+		const bool reloaded = reloadActiveProfile(fix.reloadError);
+		fix.needsRestart = streamIssues(mainStreamCodecs()) != 0;
+		if (fix.needsRestart)
+			blog(LOG_WARNING,
+			     "[CTD] relay: OBS still has the old stream encoder loaded (%s); it needs a restart",
+			     reloaded ? "after reloading the profile" : fix.reloadError.toUtf8().constData());
+		else
+			blog(LOG_INFO, "[CTD] relay: profile reloaded, OBS's stream encoders are H.264 + AAC");
+	}
+	return fix;
 }
 
-/* The scene showing on a canvas's output: channel 0, through its transition. A strong reference, or nullptr. */
-obs_source_t *canvasCurrentScene(obs_canvas_t *canvas)
+/* the dock's status line for it; empty when there is nothing to say */
+QString relayFixNote(const RelayFix &fix)
 {
-	obs_source_t *source = obs_canvas_get_channel(canvas, 0);
-	if (source && obs_source_get_type(source) == OBS_SOURCE_TYPE_TRANSITION) {
-		obs_source_t *active = obs_transition_get_active_source(source);
-		obs_source_release(source);
-		source = active;
+	QStringList parts;
+	if (fix.videoSwitched)
+		parts << uiText("Relay.Fix.VideoSwitched");
+	if (fix.noH264)
+		parts << uiText("Relay.Fix.NoH264");
+	if (fix.audioSwitched)
+		parts << uiText("Relay.Fix.AudioSwitched");
+	if (fix.keyframeSet)
+		parts << uiText(fix.cbrSet ? "Relay.Fix.KeyframeCbrSet" : "Relay.Ingest.KeyframeSet");
+	if (fix.needsRestart) {
+		parts << uiText("Relay.Fix.NeedsRestart");
+		if (!fix.reloadError.isEmpty())
+			parts << uiText("Relay.Fix.ReloadRefused").arg(fix.reloadError);
 	}
-	if (source && !obs_scene_from_source(source)) {
-		obs_source_release(source);
-		source = nullptr;
-	}
-	return source;
+	return parts.join(" ");
 }
 
 /* Long platform messages wrap onto more lines instead of running off the side. */
@@ -320,6 +650,7 @@ public:
 		layout->addLayout(connection);
 		status_ = new QLabel(this);
 		status_->setWordWrap(true);
+		status_->setTextFormat(Qt::PlainText); /* server text (the pairing message): never rich text */
 		layout->addWidget(status_);
 		action_ = new QLabel(this); /* the outcome of the last thing the user did, kept until the next one */
 		action_->setWordWrap(true);
@@ -330,6 +661,16 @@ public:
 		ctd::setWarning(multitrackWarning_, true);
 		multitrackWarning_->hide();
 		layout->addWidget(multitrackWarning_);
+		/* pre-flight: a stream to CTD Relay that isn't H.264 + AAC, and the one click that fixes it */
+		preflight_ = new QLabel(this);
+		preflight_->setWordWrap(true);
+		preflight_->setStyleSheet("color: #e5a50a; font-weight: bold;");
+		preflight_->hide();
+		layout->addWidget(preflight_);
+		fixStream_ = ctd::button(new QPushButton(uiText("Relay.Preflight.Fix"), this), ctd::Role::Primary);
+		fixStream_->setToolTip(uiText("Relay.Preflight.Fix.Tooltip"));
+		fixStream_->hide();
+		layout->addWidget(fixStream_);
 		approve_ = ctd::button(new QPushButton(uiText("Relay.OpenApproval"), this), ctd::Role::Primary);
 		layout->addWidget(approve_);
 
@@ -348,6 +689,7 @@ public:
 		layout->addLayout(ctd::wrappingCheckBox(shareObsws_, uiText("Relay.ShareObsws"), this));
 		shareStatus_ = new QLabel(this);
 		shareStatus_->setWordWrap(true);
+		shareStatus_->setTextFormat(Qt::PlainText); /* carries the server's reply */
 		layout->addWidget(shareStatus_);
 		session_ = new QLabel(this);
 		session_->setWordWrap(true);
@@ -438,6 +780,7 @@ public:
 		overlaysLayout->addLayout(askRow);
 		askStatus_ = new QLabel(overlaysBox);
 		askStatus_->setWordWrap(true);
+		askStatus_->setTextFormat(Qt::PlainText); /* carries CTD Overlay's error text */
 		askStatus_->setProperty("ctdRole", "muted");
 		overlaysLayout->addWidget(askStatus_);
 		ctd::eyebrowTitle(overlaysBox);
@@ -451,6 +794,15 @@ public:
 		chat_->setOpenExternalLinks(true);
 		chat_->setMinimumHeight(100);
 		chatLayout->addWidget(chat_);
+		/* the CTD Producer dock has the chat with viewers per platform, filters and a list that holds still */
+		auto *producer = ctd::button(new QPushButton(uiText("Relay.OpenProducer"), chatBox));
+		producer->setToolTip(uiText("Relay.OpenProducer.Tooltip"));
+		chatLayout->addWidget(producer, 0, Qt::AlignLeft);
+		QObject::connect(producer, &QPushButton::clicked, this, [] {
+			calldata_t cd = {};
+			proc_handler_call(obs_get_proc_handler(), "ctd_producer_show", &cd);
+			calldata_free(&cd);
+		});
 		ctd::eyebrowTitle(chatBox);
 		layout->addWidget(chatBox, 1);
 
@@ -474,6 +826,7 @@ public:
 			ms_request_ingest();
 			updateRoute();
 		});
+		QObject::connect(fixStream_, &QPushButton::clicked, this, [this] { fixStreamClicked(); });
 		QObject::connect(addOverlay_, &QPushButton::clicked, this, [this] {
 			obs_data_t *overlay = selectedOverlay();
 			if (overlay)
@@ -503,6 +856,8 @@ public:
 		auto *clockTimer = new QTimer(this);
 		QObject::connect(clockTimer, &QTimer::timeout, this, [this] { showClock(); });
 		clockTimer->start(40); /* a little faster than the frames, so the frame count doesn't stutter */
+		/* the readout changes every tick: kept at a fixed size (its own, set in showClock) so a new text doesn't ask
+		 * the whole main window to lay out again 25 times a second */
 		refresh();
 	}
 
@@ -588,11 +943,15 @@ private:
 		clock_->setText(uiText("Relay.Clock").arg(run, utc, local));
 		clock_->setToolTip(uiText("Relay.Clock.Tooltip").arg(c.fps, 0, 'g', 4).arg(c.delay_ms / 2, 0, 'f', 0));
 		clock_->show();
+		const QSize hint = clock_->sizeHint();
+		if (clock_->minimumSize() != hint || clock_->maximumSize() != hint)
+			clock_->setFixedSize(hint); /* a fixed-size label's setText stops at the label */
 	}
 
 	void refresh()
 	{
 		multitrackWarning_->setVisible(obsMultitrackEnabled());
+		checkRelayStream(false);
 		showProfiles_->refresh();
 		struct ms_snapshot s;
 		ms_snapshot_get(&s);
@@ -646,7 +1005,116 @@ private:
 		    event != OBS_FRONTEND_EVENT_STREAMING_STOPPED)
 			return;
 		auto *self = static_cast<MultiStreamDock *>(data);
-		QMetaObject::invokeMethod(self, [self] { self->updateRoute(); }, Qt::QueuedConnection);
+		/* the pre-flight check goes in the log every time a stream starts */
+		const bool starting = event == OBS_FRONTEND_EVENT_STREAMING_STARTING;
+		QMetaObject::invokeMethod(
+			self,
+			[self, starting] {
+				self->updateRoute();
+				self->checkRelayStream(starting);
+			},
+			Qt::QueuedConnection);
+	}
+
+	/* The pre-flight check: is a stream that goes to CTD Relay something it can pass on to the platforms (H.264
+	 * video, AAC audio)? Shows the warning and "Fix it" when it isn't. Runs with the dock's refresh and when a
+	 * stream starts (atStart: logged even when nothing changed since the last look). */
+	void checkRelayStream(bool atStart)
+	{
+		const VerticalOutput vertical = ctdVerticalOutput();
+		const bool mainToRelay = mainStreamGoesToRelay(server_->text(), vertical);
+		const StreamCodecs configured = configuredStreamCodecs();
+		const unsigned configuredIssues = streamIssues(configured);
+
+		StreamCodecs main, verticalCodecs;
+		if (mainToRelay)
+			main = mainStreamCodecs();
+		if (vertical.toRelay() && vertical.active) {
+			verticalCodecs = verticalLiveCodecs(vertical.name);
+			/* not H.264 although the profile's settings are: the canvas has its own encoder settings, which
+			 * only its own settings window changes. Remembered until a vertical stream is fine. */
+			if (!verticalCodecs.video.empty())
+				verticalOwnVideo_ = (streamIssues(verticalCodecs) & RELAY_ISSUE_VIDEO) &&
+								    !(configuredIssues & RELAY_ISSUE_VIDEO)
+							    ? verticalCodecs.video
+							    : std::string();
+		} else if (vertical.toRelay()) {
+			verticalCodecs.video = configured.video; /* what it will be built from */
+		}
+		const unsigned mainIssues = streamIssues(main);
+		const unsigned verticalIssues = streamIssues(verticalCodecs);
+		const bool live = streamingBlocked();
+		/* "Fix it" changes the profile's settings and has OBS rebuild its encoders: no use for a canvas with
+		 * settings of its own */
+		const bool fixable = mainIssues != 0 || ((mainToRelay || vertical.toRelay()) && configuredIssues != 0);
+
+		QStringList lines;
+		if (mainIssues & RELAY_ISSUE_VIDEO)
+			lines << uiText("Relay.Preflight.Video").arg(codecLabel(main.video));
+		if ((verticalIssues & RELAY_ISSUE_VIDEO) &&
+		    (!(mainIssues & RELAY_ISSUE_VIDEO) || verticalCodecs.video != main.video))
+			lines << uiText("Relay.Preflight.VerticalVideo").arg(codecLabel(verticalCodecs.video));
+		if ((mainIssues | verticalIssues) & RELAY_ISSUE_AUDIO)
+			lines << uiText("Relay.Preflight.Audio")
+					 .arg(QString::fromStdString((mainIssues & RELAY_ISSUE_AUDIO)
+									     ? main.audio
+									     : verticalCodecs.audio)
+						      .toUpper());
+		if (!lines.isEmpty()) {
+			lines << uiText("Relay.Preflight.Why");
+			if (live && fixable)
+				lines << uiText("Relay.Preflight.Live");
+		}
+		if (!verticalOwnVideo_.empty() && !(configuredIssues & RELAY_ISSUE_VIDEO))
+			lines << uiText("Relay.Preflight.VerticalOwn").arg(codecLabel(verticalOwnVideo_));
+
+		const QString text = lines.join("\n");
+		if (text != preflight_->text())
+			preflight_->setText(text);
+		preflight_->setVisible(!text.isEmpty());
+		fixStream_->setVisible(fixable);
+		fixStream_->setEnabled(!live);
+
+		/* the log: once per change, and at every stream start */
+		const bool bad = (mainIssues | verticalIssues) != 0;
+		const std::string state = main.video + "/" + main.audio + " " + verticalCodecs.video + "/" +
+					  verticalCodecs.audio + (live ? " live" : "");
+		if (state == preflightState_ && !atStart)
+			return;
+		const bool was = preflightBad_;
+		preflightState_ = state;
+		preflightBad_ = bad;
+		if (bad)
+			blog(LOG_WARNING,
+			     "[CTD] relay: pre-flight%s: main stream %s video / %s audio, vertical stream %s video / "
+			     "%s audio; CTD Relay needs H.264 video and AAC audio, or the platforms won't start",
+			     live ? " (live)" : "", codecForLog(mainToRelay, main.video),
+			     codecForLog(mainToRelay, main.audio),
+			     codecForLog(vertical.toRelay(), verticalCodecs.video),
+			     codecForLog(vertical.toRelay(), verticalCodecs.audio));
+		else if (was || (atStart && (mainToRelay || vertical.toRelay())))
+			blog(LOG_INFO,
+			     "[CTD] relay: pre-flight%s: the stream to CTD Relay is H.264 video with AAC audio",
+			     live ? " (live)" : "");
+	}
+
+	/* "not to CTD Relay" for a stream that goes elsewhere, "unknown" for a codec that can't be told yet */
+	static const char *codecForLog(bool toRelay, const std::string &codec)
+	{
+		return !toRelay ? "not to CTD Relay" : codec.empty() ? "unknown" : codec.c_str();
+	}
+
+	/* "Fix it": the same change "Send stream" makes, on its own. Never while a stream is running. */
+	void fixStreamClicked()
+	{
+		if (streamingBlocked()) {
+			action_->setText(uiText("Relay.Preflight.Live"));
+			return;
+		}
+		const QString note = relayFixNote(makeStreamRelayCompatible());
+		action_->setText(note.isEmpty() ? uiText("Relay.Fix.AlreadyOk") : note);
+		checkRelayStream(false);
+		updateRoute();
 	}
 
 	/* OBS's main stream or the vertical canvas's is running: the button would change a live output */
@@ -664,6 +1132,9 @@ private:
 	{
 		if (!server_->hasFocus())
 			server_->setText(QString::fromUtf8(s.server));
+		/* while paired, the address can't change by accident: leaving the field after a stray keystroke set a new
+		 * server, which unpaired OBS mid-show (Disconnect first, as in Settings) */
+		server_->setReadOnly(s.link != MS_DISCONNECTED);
 		QString text = QString::fromUtf8(s.message);
 		if (s.link == MS_CONNECTED) {
 			text += " · " + uiText(s.events_live ? "Relay.LiveUpdates" : "Relay.ReconnectingLiveUpdates");
@@ -872,12 +1343,16 @@ private:
 	{
 		QString html;
 		const size_t count = s.chat ? obs_data_array_count(s.chat) : 0;
-		for (size_t i = 0; i < count; i++) {
+		/* the newest 200, as before the client kept 500 for the CTD Producer dock: this box is redrawn whole */
+		for (size_t i = count > 200 ? count - 200 : 0; i < count; i++) {
 			obs_data_t *envelope = obs_data_array_item(s.chat, i);
 			obs_data_t *data = obs_data_get_obj(envelope, "data");
 			obs_data_t *user = obs_data_get_obj(data, "user");
 			QString color = str(user, "color");
-			if (color.isEmpty())
+			/* only a colour goes into the style: anything else (CSS such as url(...)) could make Qt read a local
+			 * file on the UI thread */
+			static const QRegularExpression colorPattern("^(#[0-9A-Fa-f]{3,8}|[A-Za-z]{1,20})$");
+			if (!colorPattern.match(color).hasMatch())
 				color = "#8ba3af";
 			if (obs_data_get_bool(data, "join") || str(data, "kind") == "event") {
 				/* API v1.3: "<name> joined" from Instagram/TikTok, and v1.7's kind "event" lines ("<name>
@@ -953,6 +1428,9 @@ private:
 		else if (!verticalKey.isEmpty())
 			question += "\n\n" + uiText("Relay.Ingest.Aitum").arg(verticalServer, maskKey(verticalKey));
 		question += "\n\n" + uiText("Relay.Ingest.Keyframe");
+		const StreamCodecs configured = configuredStreamCodecs();
+		if (streamIssues(configured) & RELAY_ISSUE_VIDEO)
+			question += " " + uiText("Relay.Ingest.WillSwitch").arg(codecLabel(configured.video));
 		if (!verticalKey.isEmpty())
 			question += " " + uiText(ctdVertical ? "Relay.Ingest.KeyframeCtdVertical"
 							     : "Relay.Ingest.KeyframeAitum");
@@ -999,11 +1477,15 @@ private:
 		}
 		if (clipboard)
 			QApplication::clipboard()->setText(verticalUrl);
-		const bool keyframeSet = setMainKeyframe2s();
+		/* remembered in the profile, so the pre-flight check knows this stream is CTD Relay's */
+		rememberRelayServer(server);
 		blog(LOG_INFO, "[CTD] relay: OBS's main stream now goes to the chosen profile%s",
 		     verticalSet ? ", and the vertical canvas's too" : "");
+		/* H.264 + AAC, 2 s keyframes, CBR: what CTD Relay can pass on. Last, as it may reload the profile. */
+		const QString fixNote = relayFixNote(makeStreamRelayCompatible());
 		action_->setText(uiText("Relay.Ingest.Done") + verticalNote +
-				 (keyframeSet ? " " + uiText("Relay.Ingest.KeyframeSet") : QString()));
+				 (fixNote.isEmpty() ? QString() : " " + fixNote));
+		checkRelayStream(false);
 	}
 
 	obs_data_t *selectedOverlay() const
@@ -1015,108 +1497,21 @@ private:
 	/* scene: the one of meta.scenes the source shows; empty = the whole overlay, which follows its show */
 	static void setOverlaySettings(obs_source_t *source, obs_data_t *overlay, const QString &scene)
 	{
-		obs_data_t *settings = obs_data_create();
-		obs_data_set_string(settings, "url", overlaySceneUrl(overlay, scene).c_str());
-		obs_data_set_int(settings, "width", obs_data_get_int(overlay, "width"));
-		obs_data_set_int(settings, "height", obs_data_get_int(overlay, "height"));
-		obs_source_update(source, settings);
-		obs_data_release(settings);
-
-		obs_data_t *priv = obs_source_get_private_settings(source);
-		obs_data_set_string(priv, kOverlaySlot, overlaySlot(overlay).toUtf8().constData());
-		obs_data_set_string(priv, kOverlayCanvas, overlayCanvas(overlay).toUtf8().constData());
-		obs_data_set_string(priv, kOverlayName, obs_data_get_string(overlay, "name"));
-		obs_data_set_string(priv, kOverlayApp, obs_data_get_string(overlay, "appId"));
-		obs_data_set_string(priv, kOverlayScene, scene.toUtf8().constData());
-		obs_data_release(priv);
-	}
-
-	/* the name of the overlay's scene `id`, or the id itself */
-	static QString sceneName(obs_data_t *overlay, const QString &id)
-	{
-		for (const OverlayScene &scene : overlayScenes(overlay))
-			if (scene.id == id)
-				return scene.name;
-		return id;
-	}
-
-	/* A browser source showing the overlay (or one of its scenes), at the overlay's size, top-left in `scene`. Named
-	 * after the overlay ("CTD · <overlay> · <scene>" for a scene), with a number added when the name is taken.
-	 * Returns the name it got, or an empty string. */
-	static std::string addOverlaySource(obs_scene_t *scene, obs_data_t *overlay, const QString &sceneId)
-	{
-		const std::string overlayName = obs_data_get_string(overlay, "name");
-		const std::string fallback = obs_module_text("Relay.Overlay.DefaultName");
-		std::string base = overlayName.empty() ? fallback : overlayName;
-		if (!sceneId.isEmpty())
-			base = uiText("Relay.Overlay.SceneSourceName")
-				       .arg(QString::fromStdString(base), sceneName(overlay, sceneId))
-				       .toStdString();
-		/* a name no other source has */
-		std::string name = base;
-		for (int n = 2;; n++) {
-			obs_source_t *existing = obs_get_source_by_name(name.c_str());
-			if (!existing)
-				break;
-			obs_source_release(existing);
-			name = base + " " + std::to_string(n);
-		}
-		obs_data_t *settings = obs_data_create();
-		obs_source_t *source = obs_source_create("browser_source", name.c_str(), settings, nullptr);
-		obs_data_release(settings);
-		if (!source)
-			return std::string();
-		setOverlaySettings(source, overlay, sceneId);
-		/* top-left at 1:1, so an overlay the canvas's size covers it exactly. Left to OBS, a browser source that
-		 * hasn't loaded yet is 0×0 and gets centred, leaving most of it off the canvas. */
-		obs_sceneitem_t *item = obs_scene_add(scene, source);
-		if (item) {
-			const vec2 origin = {0.0f, 0.0f};
-			obs_sceneitem_set_alignment(item, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
-			obs_sceneitem_set_pos(item, &origin);
-		}
-		obs_source_release(source);
-		return name;
+		ov::setSourceSettings(source, overlay, scene);
 	}
 
 	/* H21: a browser source at the overlay's size, in the current scene of the canvas meta.canvas names (the main
 	 * canvas for landscape, the vertical canvas for vertical). sceneId: one of its scenes (meta.scenes), pinned with
-	 * scene=<id>; empty = the whole overlay, which follows its show. */
+	 * scene=<id>; empty = the whole overlay, which follows its show. (overlay-sources.cpp, shared with the CTD
+	 * Overlays dock) */
 	void addOverlay(obs_data_t *overlay, const QString &sceneId = QString())
 	{
-		const bool vertical = overlayCanvas(overlay) == "vertical";
-		obs_source_t *sceneSource = nullptr;
-		QString where = uiText("Relay.Overlay.CurrentScene");
-		if (vertical) {
-			obs_canvas_t *canvas = findVerticalCanvas();
-			if (canvas) {
-				sceneSource = canvasCurrentScene(canvas);
-				where = uiText("Relay.Overlay.CanvasScene")
-						.arg(QString::fromUtf8(obs_canvas_get_name(canvas)));
-				obs_canvas_release(canvas);
-			}
-			if (!sceneSource) {
-				action_->setText(uiText("Relay.Overlay.NoVerticalCanvas"));
-				where = uiText("Relay.Overlay.MainScene");
-			}
-		}
-		if (!sceneSource)
-			sceneSource = obs_frontend_get_current_scene();
-		obs_scene_t *scene = obs_scene_from_source(sceneSource);
-		if (!scene) {
-			obs_source_release(sceneSource);
-			return;
-		}
-		const std::string name = addOverlaySource(scene, overlay, sceneId);
-		if (!name.empty()) {
-			blog(LOG_INFO, "[CTD] relay: added overlay '%s'%s%s to %s", name.c_str(),
-			     sceneId.isEmpty() ? "" : ", scene ", sceneId.toUtf8().constData(),
-			     where.toUtf8().constData());
-			if (!vertical || where != uiText("Relay.Overlay.MainScene"))
-				action_->setText(
-					uiText("Relay.Overlay.Added").arg(QString::fromStdString(name), where));
-		}
-		obs_source_release(sceneSource);
+		const ov::AddResult added = ov::addToCurrentScene(overlay, sceneId);
+		if (added.noVertical)
+			action_->setText(uiText("Relay.Overlay.NoVerticalCanvas"));
+		else if (!added.name.empty())
+			action_->setText(
+				uiText("Relay.Overlay.Added").arg(QString::fromStdString(added.name), added.where));
 	}
 
 	/* H21: browser sources showing one of the hub's overlays now show this profile's equivalent (meta.slot +
@@ -1188,6 +1583,11 @@ private:
 	QLabel *status_;
 	QLabel *action_;
 	QLabel *multitrackWarning_;
+	QLabel *preflight_;
+	QPushButton *fixStream_;
+	std::string preflightState_; /* what the check last logged about */
+	bool preflightBad_ = false;
+	std::string verticalOwnVideo_; /* the codec of a vertical stream that wasn't H.264 though the profile's is */
 	QPushButton *approve_;
 	QCheckBox *shareObsws_;
 	QLabel *shareStatus_;

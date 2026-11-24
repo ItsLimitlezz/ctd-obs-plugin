@@ -141,7 +141,7 @@ struct ctd_source {
 	/* H17: starting and stopping the worker happens from the UI thread (settings) and the graphics thread
 	 * (activate/deactivate); paused says the engine was stopped because the source isn't in any active scene */
 	pthread_mutex_t worker_mutex;
-	bool paused;
+	volatile bool paused; /* changed under worker_mutex; read without it (os_atomic_load_bool) */
 
 	/* the engine and the thread running it; the pointer is guarded by engine_mutex for readers on other threads */
 	pthread_mutex_t engine_mutex;
@@ -520,7 +520,7 @@ static void stop_worker(struct ctd_source *ctx)
 
 static void start_worker(struct ctd_source *ctx)
 {
-	if (ctx->thread_running || ctx->paused)
+	if (ctx->thread_running || os_atomic_load_bool(&ctx->paused))
 		return;
 
 	/* the graphics card OBS itself draws on */
@@ -1484,9 +1484,9 @@ static void ctd_update(void *data, obs_data_t *settings)
 	const bool restart = apply_settings(ctx, settings, &api_changed);
 	pthread_mutex_lock(&ctx->worker_mutex);
 	/* H17 turned off while disconnected: connect again */
-	const bool resume = ctx->paused && !os_atomic_load_bool(&ctx->disconnect_inactive);
+	const bool resume = os_atomic_load_bool(&ctx->paused) && !os_atomic_load_bool(&ctx->disconnect_inactive);
 	if (resume)
-		ctx->paused = false;
+		os_atomic_set_bool(&ctx->paused, false);
 	if (restart || resume) {
 		stop_worker(ctx);
 		start_worker(ctx);
@@ -1504,29 +1504,36 @@ static void ctd_deactivate(void *data)
 	if (!os_atomic_load_bool(&ctx->disconnect_inactive))
 		return;
 	pthread_mutex_lock(&ctx->worker_mutex);
-	if (!ctx->paused) {
-		ctx->paused = true;
+	const bool now_paused = !os_atomic_load_bool(&ctx->paused);
+	if (now_paused) {
+		os_atomic_set_bool(&ctx->paused, true);
 		WITH_ENGINE(ctx, ctd_engine_stop(ctx->engine));
-		ctd_log(ctx, LOG_INFO,
-			"not in any active scene: disconnected (\"Disconnect when not in an active scene\")");
-		obs_data_t *ws = obs_data_create();
-		char *name = source_name(ctx);
-		obs_data_set_string(ws, "sourceName", name);
-		bfree(name);
-		obs_data_set_string(ws, "state", "DISCONNECTED");
-		obs_data_set_string(ws, "previous", ctd_feed_state_name(ctx->last_state));
-		ws_vendor_emit("FeedStateChanged", ws);
-		obs_data_release(ws);
 	}
 	pthread_mutex_unlock(&ctx->worker_mutex);
+	if (!now_paused)
+		return;
+	/* told after the lock, which other threads wait on */
+	ctd_log(ctx, LOG_INFO, "not in any active scene: disconnected (\"Disconnect when not in an active scene\")");
+	obs_data_t *ws = obs_data_create();
+	char *name = source_name(ctx);
+	obs_data_set_string(ws, "sourceName", name);
+	bfree(name);
+	obs_data_set_string(ws, "state", "DISCONNECTED");
+	obs_data_set_string(ws, "previous", ctd_feed_state_name(ctx->last_state));
+	ws_vendor_emit("FeedStateChanged", ws);
+	obs_data_release(ws);
 }
 
 static void ctd_activate(void *data)
 {
 	struct ctd_source *ctx = data;
+	/* the graphics thread: nothing to do (the usual case, "Disconnect when not in an active scene" off) never waits
+	 * on the lock a settings change holds while it restarts the engine */
+	if (!os_atomic_load_bool(&ctx->paused))
+		return;
 	pthread_mutex_lock(&ctx->worker_mutex);
-	if (ctx->paused) {
-		ctx->paused = false;
+	if (os_atomic_load_bool(&ctx->paused)) {
+		os_atomic_set_bool(&ctx->paused, false);
 		stop_worker(ctx); /* joins the thread that already ended */
 		start_worker(ctx);
 		ctd_log(ctx, LOG_INFO, "in an active scene again: connecting");
@@ -1684,9 +1691,9 @@ static void proc_get_feed(void *data, calldata_t *cd)
 	obs_data_set_int(feed, "port", ctx->port);
 	obs_data_set_string(feed, "path", ctx->path ? ctx->path : "");
 	pthread_mutex_unlock(&ctx->settings_mutex);
-	pthread_mutex_lock(&ctx->worker_mutex);
-	const bool paused = ctx->paused;
-	pthread_mutex_unlock(&ctx->worker_mutex);
+	/* read without worker_mutex: this runs inside obs_enum_sources (OBS's global sources lock), and worker_mutex is
+	 * held while an engine restarts (a join) */
+	const bool paused = os_atomic_load_bool(&ctx->paused);
 	/* H17: a stopped engine still holds its last state */
 	obs_data_set_string(feed, "state",
 			    paused    ? "DISCONNECTED"
@@ -1787,7 +1794,7 @@ static void *create_source(obs_data_t *settings, obs_source_t *source, bool audi
 	bool api_changed;
 	apply_settings(ctx, settings, &api_changed);
 	/* H17: a new source isn't in an active scene yet; with the option on, activation connects it */
-	ctx->paused = os_atomic_load_bool(&ctx->disconnect_inactive);
+	os_atomic_set_bool(&ctx->paused, os_atomic_load_bool(&ctx->disconnect_inactive));
 	start_worker(ctx);
 	servers_watch(server_changed, ctx);
 	proc_handler_add(obs_source_get_proc_handler(source), "void get_feed(out string json)", proc_get_feed, ctx);
@@ -1921,9 +1928,12 @@ static bool manage_servers_clicked(obs_properties_t *props, obs_property_t *prop
 {
 	UNUSED_PARAMETER(props);
 	UNUSED_PARAMETER(property);
-	UNUSED_PARAMETER(data);
-	ctd_servers_dialog_open(); /* modal: when it closes, the Server list is rebuilt with any new profile */
-	return true;
+	struct ctd_source *ctx = data;
+	/* modal, so it opens after this handler returns (the properties view may rebuild itself, and free the button
+	 * that is running this, while a modal window is open); when it closes, the Server list is rebuilt with any new
+	 * profile */
+	ctd_servers_dialog_open_later(ctx ? ctx->source : NULL);
+	return false;
 }
 
 static obs_properties_t *ctd_properties(void *data)

@@ -33,6 +33,11 @@ void ctd_feeds_dock_register(void);
 void ctd_failover_dialog_register(void);
 /* src/ui/settings-section.cpp: CTD OBS's Settings ▸ CTD page */
 void ctd_settings_section_register(void);
+/* src/ui/producer-dock.cpp: the CTD Producer dock (viewers per platform and the merged chat) */
+void ctd_producer_dock_register(void);
+/* src/ui/overlays-dock.cpp: the CTD Overlays dock (CTD Overlay's overlays, updates and the template kit) */
+void ctd_overlays_dock_register(void);
+void ctd_overlays_dock_shutdown(void);
 
 /* What OBS shows for this module (the plugin list, the log). Display text only; the module's file name and its source
  * type ids stay as they are, so saved scenes keep loading. */
@@ -59,6 +64,8 @@ bool obs_module_load(void)
 	obs_watch_start();
 	ctd_multistream_dock_register();
 	ctd_servers_dialog_register();
+	ctd_producer_dock_register(); /* after the CTD Relay dock, whose connection it shows */
+	ctd_overlays_dock_register(); /* the same */
 	ctd_feeds_dock_register();
 	keep_live_start(); /* B1: CTD apps' multiview scenes; reads its setting before Settings ▸ CTD shows it */
 	failover_start();  /* F2: before the scene collection loads (its settings travel in it) and before the issues */
@@ -90,5 +97,6 @@ void obs_module_unload(void)
 	ms_shutdown();
 	mtx_pollers_shutdown(); /* the sources are gone by now; anything else still holding one */
 	servers_shutdown();
+	ctd_overlays_dock_shutdown(); /* its template-kit downloads use libcurl */
 	curl_global_cleanup();
 }

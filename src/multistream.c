@@ -31,7 +31,7 @@
 #define OVERLAYS_EVERY_NS (15 * NS_PER_S)
 #define HEARTBEAT_EVERY_NS (30 * NS_PER_S) /* the hub wants one at least every 60 s */
 #define OVERLAY_REPLY_TIMEOUT_NS (30 * NS_PER_S)
-#define CHAT_KEEP 200
+#define CHAT_KEEP 500 /* what GET /chat returns at most, and what the CTD Producer dock shows */
 #define ALERTS_KEEP 30
 #define EVENTS_IDLE_TIMEOUT_S 45 /* the server pings every 15 s */
 #define EVENT_TYPES \
@@ -87,6 +87,9 @@ static struct {
 	obs_data_array_t *profiles;
 	obs_data_t *status;
 	obs_data_array_t *overlays;
+	/* GET /profiles/{id}/overlay-summary items (docs/API.md §9.5): CTD Overlay's versions and template updates */
+	obs_data_array_t *overlay_summaries;
+	enum ms_summary overlay_summary_state;
 	obs_data_t *ingest;
 	uint64_t ingest_seq;
 	bool ingest_requested;
@@ -94,6 +97,9 @@ static struct {
 	uint64_t chat_seq;
 	obs_data_array_t *alerts;
 	uint64_t alerts_seq;
+	/* 403 on a read: the token lacks the scope (the person approving the pairing can untick it), until a new pairing */
+	bool chat_need_scope;   /* chat:read: GET /chat; the event stream leaves chat.* out without saying so */
+	bool status_need_scope; /* status:read: GET /profiles and GET /status */
 
 	/* the event stream */
 	char *last_event_id; /* the resume cursor; belongs to profile_id */
@@ -423,6 +429,8 @@ static void clear_profile_state(void)
 {
 	release_data(&ms.status);
 	release_array(&ms.overlays);
+	release_array(&ms.overlay_summaries);
+	ms.overlay_summary_state = MS_SUMMARY_UNKNOWN;
 	release_data(&ms.ingest);
 	release_array(&ms.chat);
 	release_array(&ms.alerts);
@@ -539,7 +547,8 @@ static void poll_pairing(const char *base, const char *pairing_id, const char *p
 		if (ms.profile_locked)
 			set_string(&ms.profile_id, profile);
 		ms.token_refused = false;
-		ms.events_need_scope = false; /* a new token: it may carry obs:write */
+		ms.events_need_scope = false;                      /* a new token: it may carry obs:write */
+		ms.chat_need_scope = ms.status_need_scope = false; /* and chat:read / status:read */
 		ms.events_state = MS_EVENTS_IDLE;
 		clear_pairing();
 		clear_profile_state();
@@ -550,9 +559,14 @@ static void poll_pairing(const char *base, const char *pairing_id, const char *p
 	} else if (status == HTTP_FORBIDDEN) {
 		clear_pairing();
 		set_link(MS_DISCONNECTED, obs_module_text("Relay.Status.Denied"));
+		/* pairing again (for a missing permission), refused: the connection it had still stands */
+		if (ms.token)
+			ms.refresh_requested = true;
 	} else if (status == HTTP_OTHER_4XX || status == HTTP_NOT_FOUND || os_gettime_ns() > ms.pairing_expires_ns) {
 		clear_pairing();
 		set_link(MS_DISCONNECTED, obs_module_text("Relay.Status.Expired"));
+		if (ms.token)
+			ms.refresh_requested = true;
 	}
 	pthread_mutex_unlock(&ms.mutex);
 	obs_data_release(reply);
@@ -587,6 +601,23 @@ static void note_result(enum http_status status, const char *server)
 	pthread_mutex_unlock(&ms.mutex);
 }
 
+/* A read answered 403 or 200: the token lacks that read's scope, or has it. Anything else says nothing about it. */
+static void note_scope(bool *need_scope, enum http_status status, const char *scope)
+{
+	if (status != HTTP_FORBIDDEN && status != HTTP_OK)
+		return;
+	pthread_mutex_lock(&ms.mutex);
+	const bool need = status == HTTP_FORBIDDEN;
+	if (*need_scope != need) {
+		*need_scope = need;
+		ms.seq++;
+		if (need)
+			blog(LOG_WARNING, "[CTD] relay: this connection may not read this (%s); pair again to allow it",
+			     scope);
+	}
+	pthread_mutex_unlock(&ms.mutex);
+}
+
 /* a failure that may pass on its own: no answer, a server error, a refused secure connection (a certificate renewed
  * late), an unreadable reply */
 static bool transient(enum http_status status)
@@ -600,6 +631,7 @@ static void fetch_profiles(const char *base, const char *token, const char *serv
 	obs_data_t *reply = NULL;
 	const enum http_status status = get_json(base, "/profiles", token, &reply);
 	note_result(status, server);
+	note_scope(&ms.status_need_scope, status, "status:read");
 	if (status != HTTP_OK || !reply) {
 		obs_data_release(reply);
 		return;
@@ -637,6 +669,7 @@ static void fetch_status(const char *base, const char *token, const char *profil
 	const enum http_status status = get_json(base, path.array, token, &reply);
 	dstr_free(&path);
 	note_result(status, server);
+	note_scope(&ms.status_need_scope, status, "status:read");
 	pthread_mutex_lock(&ms.mutex);
 	if (status == HTTP_OK && same(ms.profile_id, profile)) {
 		release_data(&ms.status);
@@ -665,6 +698,39 @@ static void fetch_overlays(const char *base, const char *token, const char *prof
 		release_array(&ms.overlays);
 		ms.overlays = items;
 		items = NULL;
+		ms.seq++;
+	}
+	pthread_mutex_unlock(&ms.mutex);
+	obs_data_array_release(items);
+	obs_data_release(reply);
+}
+
+/* CTD Overlay's versions and template updates, through CTD Relay (docs/API.md §9.5). An older CTD Relay answers 404:
+ * the dock then shows the overlays without version information. */
+static void fetch_overlay_summary(const char *base, const char *token, const char *profile)
+{
+	struct dstr path = {0};
+	dstr_printf(&path, "/profiles/%s/overlay-summary", profile);
+	obs_data_t *reply = NULL;
+	const enum http_status status = get_json(base, path.array, token, &reply);
+	dstr_free(&path);
+	obs_data_array_t *items = status == HTTP_OK && reply ? obs_data_get_array(reply, "items") : NULL;
+	pthread_mutex_lock(&ms.mutex);
+	if (same(ms.profile_id, profile)) {
+		enum ms_summary state = ms.overlay_summary_state;
+		if (status == HTTP_OK) {
+			release_array(&ms.overlay_summaries);
+			ms.overlay_summaries = items;
+			items = NULL;
+			state = MS_SUMMARY_OK;
+		} else if (status == HTTP_NOT_FOUND) {
+			release_array(&ms.overlay_summaries);
+			state = MS_SUMMARY_UNSUPPORTED;
+		} else if (status == HTTP_FORBIDDEN) {
+			release_array(&ms.overlay_summaries);
+			state = MS_SUMMARY_NEED_SCOPE;
+		}
+		ms.overlay_summary_state = state;
 		ms.seq++;
 	}
 	pthread_mutex_unlock(&ms.mutex);
@@ -701,6 +767,7 @@ static void fetch_chat(const char *base, const char *token, const char *profile)
 	obs_data_t *reply = NULL;
 	const enum http_status status = get_json(base, path.array, token, &reply);
 	dstr_free(&path);
+	note_scope(&ms.chat_need_scope, status, "chat:read");
 	if (status != HTTP_OK || !reply) {
 		obs_data_release(reply);
 		return;
@@ -1468,6 +1535,8 @@ static void dispatch_event(const char *id, const char *event, const char *data, 
 	obs_data_release(envelope);
 }
 
+#define SSE_DATA_MAX (1024 * 1024) /* one event's data, at most (a line is cut at 256 KB) */
+
 struct sse_parser {
 	struct dstr line;
 	struct dstr data;
@@ -1500,6 +1569,9 @@ static void sse_line(struct sse_parser *p, const char *profile)
 		value = "";
 	}
 	if (strcmp(field, "data") == 0) {
+		/* one event's data is capped like a line (a server that never sends the blank line can't grow it) */
+		if (p->data.len >= SSE_DATA_MAX)
+			return;
 		if (p->data.len)
 			dstr_cat_ch(&p->data, '\n');
 		dstr_cat(&p->data, value);
@@ -1667,6 +1739,7 @@ static void *ms_thread(void *unused)
 					fetch_chat(base, token, profile);
 				if (overlays_dirty || now >= next_overlays) {
 					fetch_overlays(base, token, profile);
+					fetch_overlay_summary(base, token, profile);
 					next_overlays = now + OVERLAYS_EVERY_NS;
 				}
 				if (ingest)
@@ -1820,6 +1893,7 @@ void ms_shutdown(void)
 	release_array(&ms.profiles);
 	release_data(&ms.status);
 	release_array(&ms.overlays);
+	release_array(&ms.overlay_summaries);
 	release_data(&ms.ingest);
 	release_array(&ms.chat);
 	release_array(&ms.alerts);
@@ -1865,6 +1939,9 @@ void ms_snapshot_get(struct ms_snapshot *out)
 	obs_data_addref(out->status);
 	out->overlays = ms.overlays;
 	obs_data_array_addref(out->overlays);
+	out->overlay_summaries = ms.overlay_summaries;
+	obs_data_array_addref(out->overlay_summaries);
+	out->overlay_summary_state = ms.overlay_summary_state;
 	out->ingest = ms.ingest;
 	obs_data_addref(out->ingest);
 	out->ingest_seq = ms.ingest_seq;
@@ -1874,6 +1951,8 @@ void ms_snapshot_get(struct ms_snapshot *out)
 	out->alerts = ms.alerts;
 	obs_data_array_addref(out->alerts);
 	out->alerts_seq = ms.alerts_seq;
+	out->chat_need_scope = ms.chat_need_scope;
+	out->status_need_scope = ms.status_need_scope;
 	out->overlay_request = ms.overlay_request;
 	out->overlay_message = copy_or_empty(ms.overlay_message);
 	out->overlay_created = ms.overlay_created;
@@ -1921,6 +2000,7 @@ void ms_snapshot_free(struct ms_snapshot *snapshot)
 	obs_data_array_release(snapshot->profiles);
 	obs_data_release(snapshot->status);
 	obs_data_array_release(snapshot->overlays);
+	obs_data_array_release(snapshot->overlay_summaries);
 	obs_data_release(snapshot->ingest);
 	obs_data_array_release(snapshot->chat);
 	obs_data_array_release(snapshot->alerts);
