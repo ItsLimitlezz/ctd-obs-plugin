@@ -6,6 +6,7 @@
 #include "http-client.h"
 #include "obsws-config.h"
 #include "show/library-mirror.h"
+#include "obs/ctd-settings.h"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -322,14 +323,10 @@ static enum http_status get_json(const char *base, const char *path, const char 
 
 /* ------------------------------------------------------------- settings --- */
 
+/* CTD OBS's CTD settings folder, or the plugin's own config folder (ctd-settings.c) */
 static char *config_file(void)
 {
-	char *dir = obs_module_config_path("");
-	if (dir) {
-		os_mkdirs(dir);
-		bfree(dir);
-	}
-	return obs_module_config_path("multistream.json");
+	return ctd_settings_path("multistream.json");
 }
 
 static void load_settings(void)

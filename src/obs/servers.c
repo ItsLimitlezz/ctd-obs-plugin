@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "ctd-settings.h"
 
 struct watcher {
 	servers_changed_fn fn;
@@ -91,14 +92,10 @@ static struct ctd_server *find(const char *id)
 
 /* ---------------------------------------------------------------- storage -- */
 
+/* CTD OBS's CTD settings folder, or the plugin's own config folder (ctd-settings.c) */
 static char *config_file(void)
 {
-	char *dir = obs_module_config_path("");
-	if (dir) {
-		os_mkdirs(dir);
-		bfree(dir);
-	}
-	return obs_module_config_path("servers.json");
+	return ctd_settings_path("servers.json");
 }
 
 /* call with the mutex held */
@@ -301,6 +298,32 @@ void servers_put(const struct ctd_server *server, char *id_out, size_t size)
 	if (id_out)
 		snprintf(id_out, size, "%s", id);
 	notify(id); /* H4: sources on it reconnect */
+}
+
+/* Profile import (ctd-settings.c): adds a server with its own id if no server has that id; never changes one */
+bool servers_import(const struct ctd_server *server)
+{
+	if (!servers.ready || !server->id[0])
+		return false;
+	pthread_mutex_lock(&servers.mutex);
+	const bool added = find(server->id) == NULL;
+	if (added) {
+		struct ctd_server s = {0};
+		copy_server(&s, server);
+		da_push_back(servers.list, &s);
+		struct ctd_server *imported = &servers.list.array[servers.list.num - 1];
+		if (imported->is_default) {
+			for (size_t i = 0; i < servers.list.num; i++)
+				servers.list.array[i].is_default = &servers.list.array[i] == imported;
+		}
+		save();
+	}
+	pthread_mutex_unlock(&servers.mutex);
+	if (added) {
+		blog(LOG_INFO, "[ctd-live] server profile '%s' imported", server->name ? server->name : "");
+		notify(server->id);
+	}
+	return added;
 }
 
 void servers_remove(const char *id)

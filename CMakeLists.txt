@@ -65,6 +65,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/loss-card.c src/obs/loss-vi
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/api/poller.c src/ui/feeds-dock.cpp src/obs/ws-vendor.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/issues.c src/obs/sync-groups.c src/obs/webhook.c)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/obs-watch.c src/obs/servers.c src/ui/servers-dialog.cpp)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/ctd-settings.c)
 # A source per CTD Overlay scene in the CTD Relay dock; pure C, tested on its own: test/overlay-scenes
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/overlay-scenes.c)
 # What a stream to CTD Relay has to be (H.264 + AAC) and which encoder "Send stream" switches to; pure C, tested on
