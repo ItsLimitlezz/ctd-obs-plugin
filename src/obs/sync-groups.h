@@ -31,7 +31,7 @@ struct ctd_sync_info {
 	char timecode_text[16];
 };
 
-/* for the CTD Hub and GetSyncGroups (S15) */
+/* for the CTD Relay · Feeds dock and GetSyncGroups (S15) */
 struct ctd_sync_member_view {
 	char source[256];
 	enum sync_state state;

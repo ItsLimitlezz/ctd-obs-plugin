@@ -2,7 +2,7 @@
 > Team rules live in the hub: github.com/ItsLimitlezz/CTD-Software-Suite → AGENTS.md (read it first). This file is repo-specific.
 
 ## What this is
-**CTD OBS Plugin** (CMake project name `ctd-live-source`, display name "CTD Live Source", v0.1.0 in `buildspec.json`): an OBS Studio plugin that plays live SRT feeds from MediaMTX at the live edge, with a CTD Hub dock, issue detection/fixes, audio repair, delays, timecode and sync groups, and a CTD Relay dock that reports OBS state to CTD Relay.
+**CTD OBS Plugin** (CMake project name `ctd-live-source`, display name "CTD Live Source", v0.1.0 in `buildspec.json`): an OBS Studio plugin that plays live SRT feeds from MediaMTX at the live edge, with a CTD Relay dock that reports OBS state to CTD Relay and a "CTD Relay · Feeds" dock (incoming feeds, issues, sync groups), issue detection/fixes, audio repair, delays and timecode. There is no "CTD Hub": CTD Relay is the hub (see `docs/relay-is-the-hub.md`).
 Platforms: Windows x64, macOS (universal), Ubuntu 24.04 x86_64. Requires OBS 32.2+ on Windows/macOS. Public repo, GPL-2.0-or-later (open-source).
 
 ## Layout
@@ -10,7 +10,7 @@ Platforms: Windows x64, macOS (universal), Ubuntu 24.04 x86_64. Requires OBS 32.
 | --- | --- |
 | `src/engine/` | Engine: C + FFmpeg only, no libobs (connect, demux, decode, live clock, audio norm, LTC, sync groups) |
 | `src/obs/` | OBS source/audio-source, properties, issues, loss card, servers, webhook, obs-websocket vendor `ctd` |
-| `src/ui/`, `src/multistream.c` | Qt docks (CTD Hub, CTD Relay) and the CTD Relay client |
+| `src/ui/`, `src/multistream.c` | Qt docks (CTD Relay, CTD Relay · Feeds) and the CTD Relay client |
 | `src/api/` | MediaMTX API client and poller |
 | `tools/ctd-live-probe/` | The engine on the command line (also `ltc-gen`) |
 | `test/` | Acceptance harness (`scenarios.sh`, `run-local.ps1`, MediaMTX config, `check.py`) |

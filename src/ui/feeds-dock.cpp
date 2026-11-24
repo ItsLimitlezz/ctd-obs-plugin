@@ -1,6 +1,8 @@
 /*
- * The CTD Hub dock (SPEC 5.3, H9 to H12, H14): the streams on a MediaMTX server profile, live, with what each is and
- * how its link is doing, and one click to put them in OBS.
+ * The "CTD Relay · Feeds" dock (SPEC 5.3, H9 to H12, H14): the incoming feeds on a feed server profile (MediaMTX), live,
+ * with what each is and how its link is doing, and one click to put them in OBS; below them the issues and the sync
+ * groups. It belongs to CTD Relay (there is no separate "CTD Hub"): the CTD Relay dock and CTD OBS's CTD menu open it.
+ * Its dock id is still "ctd-hub", so saved window layouts keep restoring it.
  *
  * It reads the profile's shared poller (src/api/poller.h) once a second and never calls the API itself. Every OBS
  * change (sources, scene items) happens here on the UI thread, where the frontend API wants it.
@@ -32,6 +34,7 @@
 #include <QTimer>
 #include <QTreeWidget>
 #include <QDesktopServices>
+#include <QDockWidget>
 #include <QUrl>
 #include <QHeaderView>
 #include <QVBoxLayout>
@@ -131,15 +134,15 @@ struct InObs {
 	std::set<std::string> scenes;
 };
 
-class HubDock : public QWidget {
+class FeedsDock : public QWidget {
 public:
-	explicit HubDock(QWidget *parent) : QWidget(parent)
+	explicit FeedsDock(QWidget *parent) : QWidget(parent)
 	{
 		ctd::applyTheme(this);
 		/* scrolls instead of squashing, so the dock fits (and docks into) any area */
 		auto *layout = new QVBoxLayout(ctd::scrollBody(this));
 		layout->setSpacing(10);
-		layout->addLayout(ctdHeader(this, "obs-plugin-64.png", uiText("Hub.Title")));
+		layout->addLayout(ctdHeader(this, "obs-plugin-64.png", uiText("Feeds.Title")));
 
 		/* H9: the profile and its status */
 		auto *top = new QHBoxLayout();
@@ -147,10 +150,10 @@ public:
 		/* a long profile or scene name shortens in the box rather than widening the dock */
 		profile_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
 		profile_->setMinimumContentsLength(10);
-		auto *manage = new QPushButton(uiText("Hub.Manage"), this);
+		auto *manage = new QPushButton(uiText("Feeds.Manage"), this);
 		/* S16: the sync clip, for a source's sync check; opens in the browser, to show on a phone or a screen */
-		auto *clip = new QPushButton(uiText("Hub.SyncClip"), this);
-		clip->setToolTip(uiText("Hub.SyncClip.Tooltip"));
+		auto *clip = new QPushButton(uiText("Feeds.SyncClip"), this);
+		clip->setToolTip(uiText("Feeds.SyncClip.Tooltip"));
 		connect(clip, &QPushButton::clicked, this, [] {
 			char *file = obs_module_file("sync-clip.html");
 			if (file)
@@ -169,13 +172,14 @@ public:
 		layout->addWidget(status_);
 
 		/* H12 */
+		layout->addWidget(ctd::eyebrow(uiText("Feeds.Incoming"), this));
 		auto *addAllRow = new QHBoxLayout();
-		addAll_ = new QPushButton(uiText("Hub.AddAllLive"), this);
+		addAll_ = new QPushButton(uiText("Feeds.AddAllLive"), this);
 		grid_ = new QComboBox(this);
-		grid_->addItem(uiText("Hub.Grid.AsTheyAre"), 0);
-		grid_->addItem(uiText("Hub.Grid.2x2"), 2);
-		grid_->addItem(uiText("Hub.Grid.3x3"), 3);
-		grid_->addItem(uiText("Hub.Grid.4x4"), 4);
+		grid_->addItem(uiText("Feeds.Grid.AsTheyAre"), 0);
+		grid_->addItem(uiText("Feeds.Grid.2x2"), 2);
+		grid_->addItem(uiText("Feeds.Grid.3x3"), 3);
+		grid_->addItem(uiText("Feeds.Grid.4x4"), 4);
 		ctd::button(addAll_, ctd::Role::Primary);
 		addAllRow->addWidget(addAll_);
 		addAllRow->addWidget(grid_, 1);
@@ -183,7 +187,7 @@ public:
 
 		/* H13: off unless ticked, per profile */
 		auto *autoRow = new QHBoxLayout();
-		autoAdd_ = new QCheckBox(uiText("Hub.AutoAdd"), this);
+		autoAdd_ = new QCheckBox(uiText("Feeds.AutoAdd"), this);
 		autoScene_ = new QComboBox(this);
 		autoScene_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
 		autoScene_->setMinimumContentsLength(8);
@@ -192,7 +196,7 @@ public:
 		layout->addLayout(autoRow);
 
 		/* H8: only when the profile allows changing the server */
-		createPath_ = ctd::button(new QPushButton(uiText("Hub.CreatePath"), this), ctd::Role::Hot);
+		createPath_ = ctd::button(new QPushButton(uiText("Feeds.CreatePath"), this), ctd::Role::Hot);
 		layout->addWidget(createPath_);
 		action_ = new QLabel(this);
 		action_->setWordWrap(true);
@@ -200,10 +204,10 @@ public:
 
 		/* H10 */
 		table_ = new QTableWidget(0, ColCount, this);
-		table_->setHorizontalHeaderLabels({"", uiText("Hub.Column.Stream"), uiText("Hub.Column.Publisher"),
-						   uiText("Hub.Column.Tracks"), uiText("Hub.Column.Bitrate"),
-						   uiText("Hub.Column.Link"), uiText("Hub.Column.Issues"),
-						   uiText("Hub.Column.InObs")});
+		table_->setHorizontalHeaderLabels({"", uiText("Feeds.Column.Stream"), uiText("Feeds.Column.Publisher"),
+						   uiText("Feeds.Column.Tracks"), uiText("Feeds.Column.Bitrate"),
+						   uiText("Feeds.Column.Link"), uiText("Feeds.Column.Issues"),
+						   uiText("Feeds.Column.InObs")});
 		table_->verticalHeader()->setVisible(false);
 		table_->setSelectionBehavior(QAbstractItemView::SelectRows);
 		table_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -217,7 +221,7 @@ public:
 		layout->addWidget(table_, 1);
 
 		/* D2: the issues panel; hover one for its likely cause */
-		layout->addWidget(ctd::eyebrow(uiText("Hub.Issues"), this));
+		layout->addWidget(ctd::eyebrow(uiText("Feeds.Issues"), this));
 		issues_ = new QListWidget(this);
 		issues_->setMinimumHeight(48);
 		issues_->setMaximumHeight(110);
@@ -244,13 +248,13 @@ public:
 		});
 
 		/* S15: the sync groups, each with its members' lock state, timecode, offset and delay; hidden while none */
-		syncLabel_ = ctd::eyebrow(uiText("Hub.SyncGroups"), this);
+		syncLabel_ = ctd::eyebrow(uiText("Feeds.SyncGroups"), this);
 		layout->addWidget(syncLabel_);
 		sync_ = new QTreeWidget(this);
 		sync_->setColumnCount(5);
-		sync_->setHeaderLabels({uiText("Hub.Sync.Column.Group"), uiText("Hub.Sync.Column.State"),
-					uiText("Hub.Sync.Column.Timecode"), uiText("Hub.Sync.Column.Offset"),
-					uiText("Hub.Sync.Column.Delay")});
+		sync_->setHeaderLabels({uiText("Feeds.Sync.Column.Group"), uiText("Feeds.Sync.Column.State"),
+					uiText("Feeds.Sync.Column.Timecode"), uiText("Feeds.Sync.Column.Offset"),
+					uiText("Feeds.Sync.Column.Delay")});
 		sync_->setRootIsDecorated(true);
 		sync_->setMinimumHeight(70);
 		sync_->setMaximumHeight(140);
@@ -285,11 +289,11 @@ public:
 		connect(timer, &QTimer::timeout, this, [this] { refresh(); });
 		timer->start(1000);
 		loadProfiles();
-		/* a profile added, changed or removed anywhere (Tools ▸ CTD Hub servers) shows here at once */
+		/* a profile added, changed or removed anywhere (Feed servers…) shows here at once */
 		servers_watch(serversChanged, this);
 	}
 
-	~HubDock() override
+	~FeedsDock() override
 	{
 		servers_unwatch(serversChanged, this);
 		mtx_poller_release(poller_);
@@ -300,7 +304,7 @@ private:
 
 	static void serversChanged(void *param, const char *)
 	{
-		QPointer<HubDock> self = static_cast<HubDock *>(param);
+		QPointer<FeedsDock> self = static_cast<FeedsDock *>(param);
 		QMetaObject::invokeMethod(
 			qApp,
 			[self] {
@@ -350,14 +354,24 @@ private:
 
 	/* ------------------------------------------------------- H13 auto-add -- */
 
-	static char *hubConfigFile()
+	/* feeds.json; before the dock was renamed it was hub.json, which is copied once (and left for an older plugin) */
+	static char *feedsConfigFile()
 	{
 		char *dir = obs_module_config_path("");
 		if (dir) {
 			os_mkdirs(dir);
 			bfree(dir);
 		}
-		return obs_module_config_path("hub.json");
+		char *file = obs_module_config_path("feeds.json");
+		char *old = obs_module_config_path("hub.json");
+		if (file && old && !os_file_exists(file) && os_file_exists(old)) {
+			if (os_copyfile(old, file) == 0)
+				blog(LOG_INFO, "[CTD] feeds: settings moved from hub.json to feeds.json");
+			else
+				blog(LOG_WARNING, "[CTD] feeds: couldn't copy hub.json to feeds.json");
+		}
+		bfree(old);
+		return file;
 	}
 
 	void fillScenes(const QString &keep)
@@ -379,7 +393,7 @@ private:
 
 	void loadAutoAdd()
 	{
-		char *file = hubConfigFile();
+		char *file = feedsConfigFile();
 		obs_data_t *root = file ? obs_data_create_from_json_file_safe(file, "bak") : nullptr;
 		bfree(file);
 		obs_data_t *profiles = root ? obs_data_get_obj(root, "profiles") : nullptr;
@@ -401,7 +415,7 @@ private:
 
 	void saveAutoAdd()
 	{
-		char *file = hubConfigFile();
+		char *file = feedsConfigFile();
 		if (!file)
 			return;
 		obs_data_t *root = obs_data_create_from_json_file_safe(file, "bak");
@@ -454,7 +468,7 @@ private:
 			obs_source_t *scene = obs_get_source_by_name(autoScene_->currentText().toUtf8().constData());
 			if (!scene)
 				return;
-			blog(LOG_INFO, "[CTD] hub: '%s' went live; adding it to '%s'", name.c_str(),
+			blog(LOG_INFO, "[CTD] feeds: '%s' went live; adding it to '%s'", name.c_str(),
 			     obs_source_get_name(scene));
 			addToScene(name, scene, 0, 0, 0);
 			inObs_ = findInObs();
@@ -477,7 +491,7 @@ private:
 			pass = s.api_pass;
 			token = s.api_token;
 		} else {
-			action_->setText(uiText(s.allow_writes ? "Hub.NoApiUrl" : "Hub.NoWrites"));
+			action_->setText(uiText(s.allow_writes ? "Feeds.NoApiUrl" : "Feeds.NoWrites"));
 		}
 		ctd_server_free(&s);
 		return ok;
@@ -492,16 +506,16 @@ private:
 			return;
 		action_->setText(doing);
 		QPointer<QLabel> label = action_;
-		QPointer<HubDock> self = this;
+		QPointer<FeedsDock> self = this;
 		std::thread([=] {
 			const struct mtx_api_server api = {host.c_str(), port,    user.c_str(), pass.c_str(),
 							   nullptr,      nullptr, token.c_str()};
 			const enum mtx_api_status status = call(api);
 			const QString text = status == MTX_API_OK             ? done
-					     : status == MTX_API_UNAUTHORIZED ? uiText("Hub.Write.Unauthorized")
-					     : status == MTX_API_NOT_FOUND    ? uiText("Hub.Write.NotFound")
-									      : uiText("Hub.Write.Failed");
-			blog(status == MTX_API_OK ? LOG_INFO : LOG_WARNING, "[CTD] hub: %s %s",
+					     : status == MTX_API_UNAUTHORIZED ? uiText("Feeds.Write.Unauthorized")
+					     : status == MTX_API_NOT_FOUND    ? uiText("Feeds.Write.NotFound")
+									      : uiText("Feeds.Write.Failed");
+			blog(status == MTX_API_OK ? LOG_INFO : LOG_WARNING, "[CTD] feeds: %s %s",
 			     done.toUtf8().constData(), status == MTX_API_OK ? "(done)" : "(failed)");
 			QMetaObject::invokeMethod(
 				qApp,
@@ -521,12 +535,12 @@ private:
 		if (info == publishers_.end() || info->second.second.empty())
 			return;
 		if (QMessageBox::question(this, uiText("Common.DialogTitle"),
-					  uiText("Hub.Kick.Question").arg(QString::fromStdString(path))) !=
+					  uiText("Feeds.Kick.Question").arg(QString::fromStdString(path))) !=
 		    QMessageBox::Yes)
 			return;
 		const std::string type = info->second.first, id = info->second.second;
-		runWrite(uiText("Hub.Kick.Doing").arg(QString::fromStdString(path)),
-			 uiText("Hub.Kick.Done").arg(QString::fromStdString(path)),
+		runWrite(uiText("Feeds.Kick.Doing").arg(QString::fromStdString(path)),
+			 uiText("Feeds.Kick.Done").arg(QString::fromStdString(path)),
 			 [type, id](const struct mtx_api_server &api) {
 				 return mtx_api_kick(&api, type.c_str(), id.c_str());
 			 });
@@ -535,11 +549,11 @@ private:
 	void removePath(const std::string &path)
 	{
 		if (QMessageBox::question(this, uiText("Common.DialogTitle"),
-					  uiText("Hub.Remove.Question").arg(QString::fromStdString(path))) !=
+					  uiText("Feeds.Remove.Question").arg(QString::fromStdString(path))) !=
 		    QMessageBox::Yes)
 			return;
-		runWrite(uiText("Hub.Remove.Doing").arg(QString::fromStdString(path)),
-			 uiText("Hub.Remove.Done").arg(QString::fromStdString(path)),
+		runWrite(uiText("Feeds.Remove.Doing").arg(QString::fromStdString(path)),
+			 uiText("Feeds.Remove.Done").arg(QString::fromStdString(path)),
 			 [path](const struct mtx_api_server &api) { return mtx_api_delete_path(&api, path.c_str()); });
 	}
 
@@ -547,17 +561,17 @@ private:
 	{
 		bool ok = false;
 		const QString name = QInputDialog::getText(this, uiText("Common.DialogTitle"),
-							   uiText("Hub.Create.Prompt"), QLineEdit::Normal, QString(),
+							   uiText("Feeds.Create.Prompt"), QLineEdit::Normal, QString(),
 							   &ok)
 					     .trimmed();
 		if (!ok || name.isEmpty())
 			return;
 		const std::string path = name.toStdString();
 		if (!mtx_path_name_valid(path.c_str())) {
-			action_->setText(uiText("Hub.Create.Invalid"));
+			action_->setText(uiText("Feeds.Create.Invalid"));
 			return;
 		}
-		runWrite(uiText("Hub.Create.Doing").arg(name), uiText("Hub.Create.Done").arg(name),
+		runWrite(uiText("Feeds.Create.Doing").arg(name), uiText("Feeds.Create.Done").arg(name),
 			 [path](const struct mtx_api_server &api) {
 				 return mtx_api_add_path(&api, path.c_str(), false);
 			 });
@@ -690,7 +704,7 @@ private:
 			table_->insertRow(row);
 			auto *dot = new QTableWidgetItem(s.live ? "●" : "○");
 			dot->setForeground(s.live ? ctd::magenta() : ctd::inkMuted()); /* magenta: on air */
-			dot->setToolTip(uiText(s.live ? "Hub.Live" : "Hub.NothingPublishing"));
+			dot->setToolTip(uiText(s.live ? "Feeds.Live" : "Feeds.NothingPublishing"));
 			table_->setItem(row, ColLive, dot);
 			table_->setItem(row, ColName, new QTableWidgetItem(qs(s.name)));
 			QString publisher = protocolName(qs(s.publisher));
@@ -701,9 +715,11 @@ private:
 			table_->setCellWidget(row, ColBitrate, new Sparkline(h, table_));
 			QString link;
 			if (s.has_link) {
-				link = uiText("Hub.Link").arg((int)std::lround(s.rtt_ms)).arg(s.loss_percent, 0, 'f', 1);
+				link = uiText("Feeds.Link")
+					       .arg((int)std::lround(s.rtt_ms))
+					       .arg(s.loss_percent, 0, 'f', 1);
 				auto *item = new QTableWidgetItem(link);
-				item->setToolTip(uiText("Hub.Link.Tooltip")
+				item->setToolTip(uiText("Feeds.Link.Tooltip")
 							 .arg(s.rtt_ms, 0, 'f', 1)
 							 .arg(s.loss_percent, 0, 'f', 2)
 							 .arg(s.retransmits)
@@ -731,10 +747,10 @@ private:
 				table_->insertRow(row);
 				auto *dot = new QTableWidgetItem("✕");
 				dot->setForeground(ctd::tallyRed());
-				dot->setToolTip(uiText("Hub.PathNotOnServer"));
+				dot->setToolTip(uiText("Feeds.PathNotOnServer"));
 				table_->setItem(row, ColLive, dot);
 				table_->setItem(row, ColName, new QTableWidgetItem(QString::fromStdString(path)));
-				auto *gone = new QTableWidgetItem(uiText("Hub.PathNotOnServer"));
+				auto *gone = new QTableWidgetItem(uiText("Feeds.PathNotOnServer"));
 				gone->setForeground(ctd::tallyRed());
 				table_->setItem(row, ColPublisher, gone);
 				table_->setItem(row, ColInObs, new QTableWidgetItem(inObsText(&in)));
@@ -779,7 +795,7 @@ private:
 	/* D4: one fix, off the UI thread (a kick talks to the server); the outcome in the action line */
 	void applyFix(const QString &issue, const QString &action)
 	{
-		action_->setText(uiText("Hub.Applying"));
+		action_->setText(uiText("Feeds.Applying"));
 		QPointer<QLabel> label = action_;
 		const std::string issueId = issue.toStdString(), actionId = action.toStdString();
 		std::thread([label, issueId, actionId] {
@@ -793,7 +809,7 @@ private:
 						QApplication::clipboard()->setText(link);
 					if (label)
 						label->setText(link.isEmpty() ? text
-									      : text + " " + uiText("Hub.Copied"));
+									      : text + " " + uiText("Feeds.Copied"));
 				},
 				Qt::QueuedConnection);
 		}).detach();
@@ -822,20 +838,21 @@ private:
 				lost |= sync_state_lost(v.members[m].state);
 				locked &= v.members[m].state == SYNC_LOCKED;
 			}
-			top->setText(1, uiText(lost     ? "Hub.Sync.Lost"
-					       : locked ? "Hub.Sync.Locked"
-							: "Hub.Sync.Working"));
-			top->setText(2, v.mode == SYNC_FIXED_LATENCY ? uiText("Hub.Sync.Fixed").arg(v.fixed_latency_ms)
-								     : uiText("Hub.Sync.AlignToSlowest"));
-			top->setText(4, uiText("Hub.Sync.Max").arg(v.max_delay_ms));
+			top->setText(1, uiText(lost     ? "Feeds.Sync.Lost"
+					       : locked ? "Feeds.Sync.Locked"
+							: "Feeds.Sync.Working"));
+			top->setText(2, v.mode == SYNC_FIXED_LATENCY
+						? uiText("Feeds.Sync.Fixed").arg(v.fixed_latency_ms)
+						: uiText("Feeds.Sync.AlignToSlowest"));
+			top->setText(4, uiText("Feeds.Sync.Max").arg(v.max_delay_ms));
 			if (lost)
 				top->setForeground(1, ctd::magenta());
 			for (int m = 0; m < v.count; m++) {
 				const struct ctd_sync_member_view &mv = v.members[m];
 				auto *item = new QTreeWidgetItem(top);
-				item->setText(0,
-					      QString::fromUtf8(mv.source) +
-						      (mv.reference ? " " + uiText("Hub.Sync.Reference") : QString()));
+				item->setText(0, QString::fromUtf8(mv.source) +
+							 (mv.reference ? " " + uiText("Feeds.Sync.Reference")
+								       : QString()));
 				item->setText(1, sync_state_name(mv.state));
 				item->setText(2, mv.timecode[0] ? QString::fromUtf8(mv.timecode) : QString("—"));
 				item->setText(3, uiText("Common.Ms").arg(mv.offset_ms, 0, 'f', 0));
@@ -860,7 +877,7 @@ private:
 			auto *item = new QListWidgetItem(label, issues_);
 			item->setForeground(x.applied_fix ? ctd::inkMuted() : severityColor(x.severity));
 			item->setToolTip(qs(x.cause) +
-					 (x.action_count ? "\n\n" + uiText("Hub.Issue.FixHint") : QString()));
+					 (x.action_count ? "\n\n" + uiText("Feeds.Issue.FixHint") : QString()));
 			/* D4: what the item can do */
 			QStringList actions;
 			for (int a = 0; a < x.action_count; a++)
@@ -869,7 +886,7 @@ private:
 			item->setData(Qt::UserRole + 1, actions);
 		}
 		if (!issues.count)
-			new QListWidgetItem(uiText("Hub.NoIssues"), issues_);
+			new QListWidgetItem(uiText("Feeds.NoIssues"), issues_);
 	}
 
 	static QString inObsText(const InObs *in)
@@ -879,7 +896,7 @@ private:
 		QStringList scenes;
 		for (const std::string &scene : in->scenes)
 			scenes << QString::fromStdString(scene);
-		return scenes.isEmpty() ? uiText("Hub.InObsNoScene") : scenes.join(", ");
+		return scenes.isEmpty() ? uiText("Feeds.InObsNoScene") : scenes.join(", ");
 	}
 
 	void showStatus(const struct mtx_poll_snapshot &snap)
@@ -890,23 +907,23 @@ private:
 		switch (snap.status) {
 		case MTX_API_OK:
 			status_->setText(
-				uiText("Hub.Status.Connected")
+				uiText("Feeds.Status.Connected")
 					.arg(*snap.version ? QString(" · MediaMTX %1").arg(qs(snap.version)) : "")
 					.arg(snap.latency_ms)
 					.arg(snap.count)
 					.arg(live));
 			break;
 		case MTX_API_UNKNOWN:
-			status_->setText(uiText("Hub.Status.Looking"));
+			status_->setText(uiText("Feeds.Status.Looking"));
 			break;
 		case MTX_API_UNAUTHORIZED:
-			status_->setText(uiText("Hub.Status.Unauthorized"));
+			status_->setText(uiText("Feeds.Status.Unauthorized"));
 			break;
 		case MTX_API_NOT_FOUND:
-			status_->setText(uiText("Hub.Status.NoApi"));
+			status_->setText(uiText("Feeds.Status.NoApi"));
 			break;
 		default:
-			status_->setText(uiText("Hub.Status.Unreachable"));
+			status_->setText(uiText("Feeds.Status.Unreachable"));
 			break;
 		}
 	}
@@ -966,7 +983,7 @@ private:
 				obs_sceneitem_set_bounds_alignment(item, OBS_ALIGN_CENTER);
 				obs_sceneitem_set_bounds(item, &bounds);
 			}
-			blog(LOG_INFO, "[CTD] hub: added '%s' to '%s'", obs_source_get_name(source),
+			blog(LOG_INFO, "[CTD] feeds: added '%s' to '%s'", obs_source_get_name(source),
 			     obs_source_get_name(sceneSource));
 			obs_source_release(source);
 		}
@@ -1042,9 +1059,9 @@ private:
 			return;
 		const bool inObs = inObs_.count(path) > 0;
 		QMenu menu(this);
-		menu.addAction(uiText("Hub.Menu.AddToCurrent"),
+		menu.addAction(uiText("Feeds.Menu.AddToCurrent"),
 			       [this, path] { addToScene(path, currentScene(), 0, 0, 0); });
-		QMenu *to = menu.addMenu(uiText("Hub.Menu.AddToScene"));
+		QMenu *to = menu.addMenu(uiText("Feeds.Menu.AddToScene"));
 		struct obs_frontend_source_list scenes = {};
 		obs_frontend_get_scenes(&scenes);
 		for (size_t i = 0; i < scenes.sources.num; i++) {
@@ -1057,7 +1074,7 @@ private:
 			});
 		}
 		obs_frontend_source_list_free(&scenes);
-		QMenu *copy = menu.addMenu(uiText("Hub.Menu.CopyUrl"));
+		QMenu *copy = menu.addMenu(uiText("Feeds.Menu.CopyUrl"));
 		copy->addAction("SRT", [this, path] { copyPublishUrl(path, "srt"); });
 		copy->addAction("RTMP", [this, path] { copyPublishUrl(path, "rtmp"); });
 		copy->addAction("WHIP (WebRTC)", [this, path] { copyPublishUrl(path, "whip"); });
@@ -1068,14 +1085,14 @@ private:
 		if (writes) {
 			menu.addSeparator();
 			const auto pub = publishers_.find(path);
-			menu.addAction(uiText("Hub.Menu.Kick"), [this, path] {
+			menu.addAction(uiText("Feeds.Menu.Kick"), [this, path] {
 				    kickPublisher(path);
 			    })->setEnabled(pub != publishers_.end() && !pub->second.second.empty());
-			menu.addAction(uiText("Hub.Menu.RemovePath"), [this, path] { removePath(path); });
+			menu.addAction(uiText("Feeds.Menu.RemovePath"), [this, path] { removePath(path); });
 		}
 		menu.addSeparator();
-		menu.addAction(uiText("Hub.Menu.Reconnect"), [this, path] { reconnect(path); })->setEnabled(inObs);
-		menu.addAction(uiText("Hub.Menu.Properties"), [this, path] {
+		menu.addAction(uiText("Feeds.Menu.Reconnect"), [this, path] { reconnect(path); })->setEnabled(inObs);
+		menu.addAction(uiText("Feeds.Menu.Properties"), [this, path] {
 			    openProperties(path);
 		    })->setEnabled(inObs);
 		menu.exec(table_->viewport()->mapToGlobal(pos));
@@ -1108,8 +1125,30 @@ private:
 
 } // namespace
 
-extern "C" void ctd_hub_dock_register(void)
+static QPointer<FeedsDock> feedsDock;
+
+/* Brings the dock into view (the CTD Relay dock's "Incoming feeds…"). UI thread only. */
+extern "C" void ctd_feeds_dock_show(void)
+{
+	if (!feedsDock)
+		return;
+	for (QWidget *w = feedsDock->parentWidget(); w; w = w->parentWidget()) {
+		if (auto *dock = qobject_cast<QDockWidget *>(w)) {
+			dock->setVisible(true);
+			dock->raise();
+			break;
+		}
+	}
+}
+
+extern "C" void ctd_feeds_dock_register(void)
 {
 	auto *main = static_cast<QWidget *>(obs_frontend_get_main_window());
-	obs_frontend_add_dock_by_id("ctd-hub", obs_module_text("Hub.Title"), new HubDock(main));
+	auto *dock = new FeedsDock(main);
+	/* the id from when this was the "CTD Hub" dock: saved layouts (and CTD OBS's CTD menu) find it by this */
+	if (!obs_frontend_add_dock_by_id("ctd-hub", obs_module_text("Feeds.Title"), dock)) {
+		delete dock;
+		return;
+	}
+	feedsDock = dock;
 }

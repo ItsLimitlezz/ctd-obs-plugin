@@ -26,9 +26,9 @@ OBS_MODULE_USE_DEFAULT_LOCALE("obs-ctd-live-source", "en-US")
 extern struct obs_source_info ctd_live_source_info;
 extern struct obs_source_info ctd_live_audio_source_info;
 
-/* src/ui/multistream-dock.cpp, src/ui/hub-dock.cpp, src/ui/discovery-menu.cpp */
+/* src/ui/multistream-dock.cpp, src/ui/feeds-dock.cpp, src/ui/discovery-menu.cpp */
 void ctd_multistream_dock_register(void);
-void ctd_hub_dock_register(void);
+void ctd_feeds_dock_register(void);
 void ctd_discovery_menu_register(void);
 /* src/ui/keep-live-menu.cpp */
 void ctd_keep_live_menu_register(void);
@@ -61,7 +61,7 @@ bool obs_module_load(void)
 	ctd_multistream_dock_register();
 	ctd_servers_dialog_register();
 	ctd_producer_dock_register(); /* after the CTD Relay dock, whose connection it shows */
-	ctd_hub_dock_register();
+	ctd_feeds_dock_register();
 	ctd_discovery_menu_register();
 	keep_live_start(); /* B1: CTD apps' multiview scenes; reads its setting, before the Tools switch shows it */
 	ctd_keep_live_menu_register();

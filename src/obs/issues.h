@@ -5,7 +5,7 @@
  * rule's time, there is one per (subject, rule), and it clears once the condition has been gone for 10 s (D3).
  *
  * Raised and cleared issues go to the OBS log, obs-websocket (IssueRaised, IssueCleared) and CTD Relay
- * (obs.issue.raised, obs.issue.cleared); the CTD Hub dock and the sources' stats read the current list.
+ * (obs.issue.raised, obs.issue.cleared); the CTD Relay · Feeds dock and the sources' stats read the current list.
  */
 
 #pragma once
@@ -24,7 +24,7 @@ enum issue_severity {
 	ISSUE_CRITICAL,
 };
 
-/* D4: one click in the hub, one vendor request (ApplyFix) */
+/* D4: one click in the Feeds dock, one vendor request (ApplyFix) */
 struct issue_action {
 	char id[24];     /* "raise-latency", "hardware-decode", "kick", "copy-url", "undo" */
 	char label[160]; /* "Raise this source's SRT latency to 400 ms (from 120)" */
