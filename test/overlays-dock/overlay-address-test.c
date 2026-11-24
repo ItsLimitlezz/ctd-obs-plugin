@@ -75,6 +75,15 @@ int main(void)
 	check("origin with credentials", ctd_origin_ok("https://u:p@overlay.example.com", false), false);
 	check("origin bad port", ctd_origin_ok("http://192.0.2.10:48x0", false), false);
 	check("origin empty port", ctd_origin_ok("http://192.0.2.10:", false), false);
+	check("origin two ports", ctd_origin_ok("https://overlay.example.com:bogus:443", true), false);
+	check("origin two numeric ports", ctd_origin_ok("http://192.0.2.10:1:2", false), false);
+	check("origin ipv6 no port", ctd_origin_ok("http://[2001:db8::1]", false), true);
+	check("origin ipv6 two ports", ctd_origin_ok("http://[2001:db8::1]:1:2", false), false);
+	check("origin ipv6 text after", ctd_origin_ok("http://[2001:db8::1]x", false), false);
+	check("origin ipv6 unclosed", ctd_origin_ok("http://[2001:db8::1:4850", false), false);
+	check("origin ipv6 empty", ctd_origin_ok("http://[]:4850", false), false);
+	check("origin bracket inside", ctd_origin_ok("http://overlay[1].example.com", false), false);
+	check("origin bare ipv6", ctd_origin_ok("http://2001:db8::1", false), false);
 	check("origin no host", ctd_origin_ok("https://", false), false);
 	check("origin other scheme", ctd_origin_ok("ftp://overlay.example.com", false), false);
 	check("origin upper scheme", ctd_origin_ok("HTTPS://overlay.example.com", true), false);
@@ -150,6 +159,8 @@ int main(void)
 		  CTD_SWITCH_NOT_OURS, NULL);
 	switch_is("a longer host", &o, land, "https://overlay.example.com.example.net/o/lower?key=k1",
 		  CTD_ADDRESS_LOCAL, CTD_SWITCH_NOT_OURS, NULL);
+	switch_is("a malformed port", &o, land, "http://192.0.2.10:4850:1/o/lower?key=k1", CTD_ADDRESS_PUBLIC,
+		  CTD_SWITCH_NOT_OURS, NULL);
 	switch_is("credentials", &o, land, "http://u@192.0.2.10:4850/o/lower?key=k1", CTD_ADDRESS_PUBLIC,
 		  CTD_SWITCH_NOT_OURS, NULL);
 	switch_is("http at the public host", &o, land, "http://overlay.example.com/o/lower?key=k1", CTD_ADDRESS_LOCAL,

@@ -35,19 +35,29 @@ static size_t origin_len(const char *origin, bool https_only)
 	if (n >= CTD_ORIGIN_MAX || origin + n <= host)
 		return 0;
 	const char *end = origin + n;
-	const char *colon = NULL;
-	bool bracket = false;
 	for (const char *c = host; c < end; c++) {
 		const unsigned char u = (unsigned char)*c;
 		if (u <= ' ' || u >= 0x7f || *c == '/' || *c == '?' || *c == '#' || *c == '@' || *c == '\\' ||
 		    *c == '"' || *c == '<' || *c == '>')
 			return 0;
-		if (*c == '[')
-			bracket = true;
-		else if (*c == ']')
-			bracket = false;
-		else if (*c == ':' && !bracket)
-			colon = c;
+	}
+	/* the host: "[ipv6]" (brackets around the whole of it, nothing but ":port" after), else a name or IPv4
+	 * address with no brackets and at most one ':' (its port) */
+	const char *colon = NULL;
+	if (*host == '[') {
+		const char *close = memchr(host, ']', (size_t)(end - host));
+		if (!close || close == host + 1 || memchr(host + 1, '[', (size_t)(close - host - 1)) ||
+		    (close + 1 < end && close[1] != ':'))
+			return 0;
+		colon = close + 1 < end ? close + 1 : NULL;
+		if (colon && memchr(colon + 1, ':', (size_t)(end - colon - 1)))
+			return 0;
+	} else {
+		if (memchr(host, '[', (size_t)(end - host)) || memchr(host, ']', (size_t)(end - host)))
+			return 0;
+		colon = memchr(host, ':', (size_t)(end - host));
+		if (colon && memchr(colon + 1, ':', (size_t)(end - colon - 1)))
+			return 0; /* "host:bogus:443" */
 	}
 	if (colon) { /* a port: digits only, at least one */
 		if (colon + 1 == end)
