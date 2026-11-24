@@ -230,7 +230,8 @@ disconnect).
 | Event | When | Data |
 |---|---|---|
 | `FeedStateChanged` | a CTD source's state changes | `sourceName`, `path`, `serverId`, `state`, `previous` |
-| `IssueRaised`, `IssueCleared` | an issue is raised, or has been gone for 10 s | `GetIssues`'s fields |
+| `IssueRaised`, `IssueCleared` | an issue is raised, or has been gone for 10 s | `GetIssues`'s fields, plus, for an issue about one source, `onProgram` (it is visible on the program scene) and `scene` (that scene) |
+| `FailoverTriggered` | the plugin switched program away from a dead feed, or back ([failover.md](failover.md)) | `canvas` (`landscape`), `from`, `to`, `source`, `reason` (`signal-lost`, `color-bars`, `image-match`, `frozen-picture`; empty for a return), `mode` (`target`, `list`, `return`), `title` |
 | `SyncStatusChanged` | a sync group member's state changes | `group`, `sourceName`, `state`, `previous`, `lost`, `offsetMs`, `delayMs` |
 | `ProgramSceneChanged` | a canvas's program scene changes (within 100 ms; a transition counts from its start) | `canvas`, `scene`, `sceneUuid`, `previous`, `atMs`, `scenes` (the canvas's whole list) |
 
@@ -264,7 +265,8 @@ on to its other apps:
 | `obs.feed.stats` | every 5 s while LIVE | `source`, `fps`, `width`, `height`, `latenessMs`, `resyncs`, `reconnects`, `decoder` |
 | `obs.output` | the main stream, the recording or another streaming output (Aitum Vertical's) changes | `output`, `canvas`, `state` (`live`, `reconnecting`, `stopped`), `error` |
 | `obs.scene` | a canvas's program scene changes; its scene list changes; everything again every minute | `canvas`, `scene`, `sceneUuid`, `previous` (on a change of scene only), `atMs`, `scenes` [{`name`, `uuid`}] |
-| `obs.issue.raised`, `obs.issue.cleared` | as `IssueRaised`, `IssueCleared` | the same |
+| `obs.issue.raised`, `obs.issue.cleared` | as `IssueRaised`, `IssueCleared` | the same (`onProgram` / `scene`: Relay API 1.12) |
+| `obs.failover` | as `FailoverTriggered` (Relay API 1.12; sent at once) | the same |
 | `obs.sync.status` | as `SyncStatusChanged` | the same |
 
 Events wait in a small queue while CTD Relay is away and never affect playback.

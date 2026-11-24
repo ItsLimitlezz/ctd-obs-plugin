@@ -1650,6 +1650,20 @@ static void proc_apply_sync_check(void *data, calldata_t *cd)
 	calldata_set_bool(cd, "ok", apply_sync_check(data));
 }
 
+/* "void get_picture_grid(in ptr grid, out bool ok)": the latest frame as a 16 × 16 luma grid, into the caller's
+ * CTD_PICTURE_GRID_BYTES bytes, for the failover's picture matching (colour bars, a saved picture) */
+static void proc_get_picture_grid(void *data, calldata_t *cd)
+{
+	struct ctd_source *ctx = data;
+	uint8_t *grid = calldata_ptr(cd, "grid");
+	bool ok = false;
+	pthread_mutex_lock(&ctx->engine_mutex);
+	if (ctx->engine && grid)
+		ok = ctd_engine_get_picture_grid(ctx->engine, grid);
+	pthread_mutex_unlock(&ctx->engine_mutex);
+	calldata_set_bool(cd, "ok", ok);
+}
+
 /* "void get_feed(out string json)": the feed's state for the obs-websocket vendor (I1, I2 GetFeeds) */
 static void proc_get_feed(void *data, calldata_t *cd)
 {
@@ -1784,6 +1798,8 @@ static void *create_source(obs_data_t *settings, obs_source_t *source, bool audi
 	start_worker(ctx);
 	servers_watch(server_changed, ctx);
 	proc_handler_add(obs_source_get_proc_handler(source), "void get_feed(out string json)", proc_get_feed, ctx);
+	proc_handler_add(obs_source_get_proc_handler(source), "void get_picture_grid(in ptr grid, out bool ok)",
+			 proc_get_picture_grid, ctx);
 	proc_handler_add(obs_source_get_proc_handler(source), "void reset_audio()", proc_reset_audio, ctx);
 	proc_handler_add(obs_source_get_proc_handler(source), "void get_sync(in ptr info)", proc_get_sync, ctx);
 	proc_handler_add(obs_source_get_proc_handler(source), "void start_sync_check()", proc_start_sync_check, ctx);

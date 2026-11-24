@@ -18,6 +18,7 @@ OBS_MODULE_USE_DEFAULT_LOCALE("obs-ctd-live-source", "en-US")
 #include "obs/ws-vendor.h"
 #include "obs/issues.h"
 #include "obs/keep-live.h"
+#include "obs/failover.h"
 #include "obs/sync-groups.h"
 #include "obs/webhook.h"
 #include "show/show.h"
@@ -28,6 +29,8 @@ extern struct obs_source_info ctd_live_audio_source_info;
 /* src/ui/multistream-dock.cpp, src/ui/feeds-dock.cpp */
 void ctd_multistream_dock_register(void);
 void ctd_feeds_dock_register(void);
+/* src/ui/failover-dialog.cpp: Tools ▸ CTD failover */
+void ctd_failover_dialog_register(void);
 /* src/ui/settings-section.cpp: CTD OBS's Settings ▸ CTD page */
 void ctd_settings_section_register(void);
 /* src/ui/producer-dock.cpp: the CTD Producer dock (viewers per platform and the merged chat) */
@@ -65,6 +68,8 @@ bool obs_module_load(void)
 	ctd_overlays_dock_register(); /* the same */
 	ctd_feeds_dock_register();
 	keep_live_start(); /* B1: CTD apps' multiview scenes; reads its setting before Settings ▸ CTD shows it */
+	failover_start();  /* F2: before the scene collection loads (its settings travel in it) and before the issues */
+	ctd_failover_dialog_register();
 	ctd_settings_section_register();
 	show_init(); /* Show Profiles: turns itself on once OBS has loaded, only inside CTD OBS */
 	blog(LOG_INFO, "[CTD] live-source: plugin loaded (version %s)", PLUGIN_VERSION);
@@ -86,6 +91,7 @@ void obs_module_unload(void)
 	show_shutdown();  /* waits for a running save or switch step */
 	sync_groups_stop();
 	issues_stop();
+	failover_stop(); /* after the issues, which ask it what is on program */
 	obs_watch_stop();
 	webhook_stop(); /* after everything that sends events */
 	ms_shutdown();

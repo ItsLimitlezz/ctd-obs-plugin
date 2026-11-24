@@ -46,6 +46,8 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       src/multistream.c
       src/obs/ctd-live-source.c
       src/obs/issues.c
+      src/obs/failover-core.c
+      src/obs/failover.c
       src/obs/keep-live-core.c
       src/obs/keep-live.c
       src/obs/loss-card.c
@@ -82,6 +84,7 @@ if(CMAKE_PROJECT_NAME STREQUAL "obs-studio")
       src/show/sync.c
       src/show/tar.c
       src/ui/device-map-dialog.cpp
+      src/ui/failover-dialog.cpp
       src/ui/feeds-dock.cpp
       src/ui/multistream-dock.cpp
       src/ui/overlay-sources.cpp
@@ -192,6 +195,9 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obsws-config.c)
 # Keep scenes live for CTD apps' multiviews (bug B1). keep-live-core.c is pure C with its own tests:
 #   cmake --build --preset <preset> --target ctd-keep-live-tests && ctest --test-dir <build dir> -C RelWithDebInfo
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/keep-live.c src/obs/keep-live-core.c)
+# Auto-failover on dead feeds (CTD OBS F2). failover-core.c is pure C with its own tests:
+#   cmake --build --preset <preset> --target ctd-failover-tests && ctest --test-dir <build dir> -C RelWithDebInfo
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs/failover.c src/obs/failover-core.c src/ui/failover-dialog.cpp)
 # Show Profiles (design: hub epics/show-profiles-design.md). The pure-logic files are shared with ctd-show-tests.
 set(
   CTD_SHOW_PURE_SOURCES
@@ -272,4 +278,5 @@ endif()
 enable_testing()
 add_subdirectory(test/show)
 add_subdirectory(test/keep-live)
+add_subdirectory(test/failover)
 add_subdirectory(test/producer)
